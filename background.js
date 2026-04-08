@@ -2022,7 +2022,15 @@ async function pollVerificationCodeWithAutoResend(options) {
       return;
     }
 
+    if (result?.stopped) {
+      throw new Error(result.error || STOP_ERROR_MESSAGE);
+    }
+
     const pollError = result?.error || `No verification code returned for step ${step}.`;
+    if (result?.error && isMailLoginRequiredError(result.error)) {
+      throw new Error(pollError);
+    }
+
     if (round >= resendRounds) {
       throw new Error(pollError);
     }

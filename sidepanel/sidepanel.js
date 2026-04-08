@@ -205,6 +205,10 @@ const I18N = {
     mailLoginHelpTitle: ({ provider }) => `${provider} 需要登录`,
     mailLoginHelpText: ({ provider, host, step }) => `我已经为你打开 ${provider}${host ? `（${host}）` : ''}。请先在那个页面完成登录，然后回到这里点击“确定”，再重新执行第 ${step} 步。`,
     mailLoginConfirmed: '已关闭邮箱登录提示，请重新执行当前步骤。',
+    mailLoginRetrying: ({ step }) => `正在重新执行第 ${step} 步...`,
+    mailLoginRetryFailed: ({ message }) => `重新执行失败：${message}`,
+    mailLoginResumingAuto: '正在恢复自动流程...',
+    mailLoginResumeAutoFailed: ({ message }) => `恢复自动流程失败：${message}`,
     pleaseEnterEmailFirst: '请先粘贴邮箱地址或点击 Auto',
     skipFailed: ({ message }) => `跳过失败：${message}`,
     stepSkippedToast: ({ step }) => `第 ${step} 步已跳过`,
@@ -343,6 +347,10 @@ const I18N = {
     mailLoginHelpTitle: ({ provider }) => `${provider} sign-in required`,
     mailLoginHelpText: ({ provider, host, step }) => `We opened ${provider}${host ? ` (${host})` : ''} for you. Please finish sign-in there, then return here, click "OK", and rerun step ${step}.`,
     mailLoginConfirmed: 'Mail sign-in reminder dismissed. Please rerun the current step.',
+    mailLoginRetrying: ({ step }) => `Retrying step ${step}...`,
+    mailLoginRetryFailed: ({ message }) => `Retry failed: ${message}`,
+    mailLoginResumingAuto: 'Resuming auto run...',
+    mailLoginResumeAutoFailed: ({ message }) => `Failed to resume auto run: ${message}`,
     pleaseEnterEmailFirst: 'Please paste email address or use Auto first',
     skipFailed: ({ message }) => `Skip failed: ${message}`,
     stepSkippedToast: ({ step }) => `Step ${step} skipped`,
@@ -1159,6 +1167,27 @@ function syncPasswordToggleLabel() {
   btnTogglePassword.textContent = inputPassword.type === 'password' ? t('btnShow') : t('btnHide');
 }
 
+async function executeStepFromSidepanel(step) {
+  if (step === 3) {
+    const email = inputEmail.value.trim();
+    if (!email) {
+      showToast(t('pleaseEnterEmailFirst'), 'warn');
+      return { error: t('pleaseEnterEmailFirst') };
+    }
+    return chrome.runtime.sendMessage({
+      type: 'EXECUTE_STEP',
+      source: 'sidepanel',
+      payload: { step, email },
+    });
+  }
+
+  return chrome.runtime.sendMessage({
+    type: 'EXECUTE_STEP',
+    source: 'sidepanel',
+    payload: { step },
+  });
+}
+
 // ============================================================
 // Button Handlers
 // ============================================================
@@ -1166,15 +1195,9 @@ function syncPasswordToggleLabel() {
 document.querySelectorAll('.step-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const step = Number(btn.dataset.step);
-    if (step === 3) {
-      const email = inputEmail.value.trim();
-      if (!email) {
-        showToast(t('pleaseEnterEmailFirst'), 'warn');
-        return;
-      }
-      await chrome.runtime.sendMessage({ type: 'EXECUTE_STEP', source: 'sidepanel', payload: { step, email } });
-    } else {
-      await chrome.runtime.sendMessage({ type: 'EXECUTE_STEP', source: 'sidepanel', payload: { step } });
+    const response = await executeStepFromSidepanel(step);
+    if (response?.error) {
+      showToast(response.error, 'error');
     }
   });
 });
@@ -1282,8 +1305,48 @@ btnIcloudLoginDone.addEventListener('click', async () => {
 });
 
 btnMailLoginDone.addEventListener('click', async () => {
-  hideMailLoginHelp();
-  showToast(t('mailLoginConfirmed'), 'info', 2500);
+  const step = Number(lastMailLoginPrompt?.step) || 0;
+  btnMailLoginDone.disabled = true;
+  let shouldResumeAutoRun = false;
+
+  try {
+    const state = await chrome.runtime.sendMessage({ type: 'GET_STATE', source: 'sidepanel' });
+    shouldResumeAutoRun = Boolean(state?.autoRunPausedPhase === 'error' && Number(state?.autoRunCurrentRun || 0) > 0);
+
+    if (!step) {
+      hideMailLoginHelp();
+      showToast(t('mailLoginConfirmed'), 'info', 2500);
+      return;
+    }
+
+    let response;
+    if (shouldResumeAutoRun) {
+      showToast(t('mailLoginResumingAuto'), 'info', 2000);
+      response = await chrome.runtime.sendMessage({
+        type: 'CONTINUE_AUTO_RUN',
+        source: 'sidepanel',
+        payload: { email: inputEmail.value.trim() },
+      });
+    } else {
+      showToast(t('mailLoginRetrying', { step }), 'info', 2000);
+      response = await executeStepFromSidepanel(step);
+    }
+
+    if (response?.error) {
+      throw new Error(response.error);
+    }
+    hideMailLoginHelp();
+  } catch (err) {
+    const message = err.message || String(err);
+    showToast(
+      shouldResumeAutoRun
+        ? t('mailLoginResumeAutoFailed', { message })
+        : t('mailLoginRetryFailed', { message }),
+      'error'
+    );
+  } finally {
+    btnMailLoginDone.disabled = false;
+  }
 });
 
 btnTogglePassword.addEventListener('click', () => {
