@@ -78,6 +78,19 @@
           <option value="inbucket" data-i18n="mailProviderInbucket">Inbucket (custom host)</option>
         </select>
       </div>
+      <div class="data-row" id="row-mail-poll-config">
+        <span class="data-label" data-i18n="labelMailWait">Poll</span>
+        <div class="data-inline">
+          <input type="number" id="input-mail-poll-attempts" class="data-input" min="1" max="120" placeholder="20" data-i18n-placeholder="placeholderMailPollAttempts" />
+          <input type="number" id="input-mail-poll-interval" class="data-input" min="1" max="30" placeholder="3" data-i18n-placeholder="placeholderMailPollInterval" />
+        </div>
+      </div>
+      <div class="data-row" id="row-mail-resend-config">
+        <span class="data-label" data-i18n="labelMailResend">Resend</span>
+        <div class="data-inline">
+          <input type="number" id="input-mail-resend-rounds" class="data-input" min="1" max="10" placeholder="3" data-i18n-placeholder="placeholderMailResendRounds" />
+        </div>
+      </div>
       <div class="data-row" id="row-inbucket-host" style="display:none;">
         <span class="data-label" data-i18n="labelInbucket">Inbucket</span>
         <input type="text" id="input-inbucket-host" class="data-input" placeholder="your-inbucket-host or https://your-inbucket-host" data-i18n-placeholder="placeholderInbucketHost" />

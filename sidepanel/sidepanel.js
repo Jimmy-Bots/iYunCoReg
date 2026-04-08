@@ -51,6 +51,9 @@ const selectLanguage = document.getElementById('select-language');
 const inputVpsUrl = document.getElementById('input-vps-url');
 const btnPasteVpsUrl = document.getElementById('btn-paste-vps-url');
 const selectMailProvider = document.getElementById('select-mail-provider');
+const inputMailPollAttempts = document.getElementById('input-mail-poll-attempts');
+const inputMailPollInterval = document.getElementById('input-mail-poll-interval');
+const inputMailResendRounds = document.getElementById('input-mail-resend-rounds');
 const rowInbucketHost = document.getElementById('row-inbucket-host');
 const inputInbucketHost = document.getElementById('input-inbucket-host');
 const rowInbucketMailbox = document.getElementById('row-inbucket-mailbox');
@@ -100,6 +103,8 @@ const I18N = {
     labelAlias: '别名',
     labelCleanup: '清理',
     labelVerify: '验证',
+    labelMailWait: '轮询',
+    labelMailResend: '重发',
     labelInbucket: 'Inbucket',
     labelMailbox: '邮箱名',
     labelEmail: '邮箱',
@@ -115,6 +120,9 @@ const I18N = {
     placeholderCpaAuth: 'http://ip:port/management.html#/oauth',
     placeholderInbucketHost: '你的 inbucket 主机或 https://你的主机',
     placeholderInbucketMailbox: '例如 zju2001',
+    placeholderMailPollAttempts: '次数，例如 20',
+    placeholderMailPollInterval: '间隔秒，例如 3',
+    placeholderMailResendRounds: '重发轮数，例如 3',
     placeholderIcloudSearch: '搜索邮箱 / 标签 / 备注',
     placeholderEmail: '使用 Auto 生成 iCloud 别名，或手动粘贴',
     placeholderPassword: '留空则自动生成',
@@ -242,6 +250,8 @@ const I18N = {
     labelAlias: 'Alias',
     labelCleanup: 'Cleanup',
     labelVerify: 'Verify',
+    labelMailWait: 'Poll',
+    labelMailResend: 'Resend',
     labelInbucket: 'Inbucket',
     labelMailbox: 'Mailbox',
     labelEmail: 'Email',
@@ -257,6 +267,9 @@ const I18N = {
     placeholderCpaAuth: 'http://ip:port/management.html#/oauth',
     placeholderInbucketHost: 'your inbucket host or https://your-host',
     placeholderInbucketMailbox: 'e.g. zju2001',
+    placeholderMailPollAttempts: 'Attempts, e.g. 20',
+    placeholderMailPollInterval: 'Interval sec, e.g. 3',
+    placeholderMailResendRounds: 'Resend rounds, e.g. 3',
     placeholderIcloudSearch: 'Search alias / label / note',
     placeholderEmail: 'Use Auto to generate an iCloud alias, or paste manually',
     placeholderPassword: 'Leave blank to auto-generate',
@@ -539,6 +552,9 @@ async function restoreState() {
     if (state.mailProvider) {
       selectMailProvider.value = state.mailProvider;
     }
+    inputMailPollAttempts.value = String(state.mailPollMaxAttempts || 20);
+    inputMailPollInterval.value = String(Math.max(1, Math.round((state.mailPollIntervalMs || 3000) / 1000)));
+    inputMailResendRounds.value = String(state.mailResendRounds || 3);
     if (state.inbucketHost) {
       inputInbucketHost.value = state.inbucketHost;
     }
@@ -1483,6 +1499,36 @@ inputInbucketMailbox.addEventListener('change', async () => {
     type: 'SAVE_SETTING',
     source: 'sidepanel',
     payload: { inbucketMailbox: inputInbucketMailbox.value.trim() },
+  });
+});
+
+inputMailPollAttempts.addEventListener('change', async () => {
+  const value = Math.min(120, Math.max(1, parseInt(inputMailPollAttempts.value, 10) || 20));
+  inputMailPollAttempts.value = String(value);
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { mailPollMaxAttempts: value },
+  });
+});
+
+inputMailPollInterval.addEventListener('change', async () => {
+  const seconds = Math.min(30, Math.max(1, parseInt(inputMailPollInterval.value, 10) || 3));
+  inputMailPollInterval.value = String(seconds);
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { mailPollIntervalMs: seconds * 1000 },
+  });
+});
+
+inputMailResendRounds.addEventListener('change', async () => {
+  const value = Math.min(10, Math.max(1, parseInt(inputMailResendRounds.value, 10) || 3));
+  inputMailResendRounds.value = String(value);
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { mailResendRounds: value },
   });
 });
 

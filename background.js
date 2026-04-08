@@ -49,6 +49,9 @@ const DEFAULT_STATE = {
   vpsUrl: '',
   customPassword: '',
   mailProvider: '163', // 'qq', '163', 'gmail', or 'inbucket'
+  mailPollMaxAttempts: 20,
+  mailPollIntervalMs: 3000,
+  mailResendRounds: 3,
   inbucketHost: '',
   inbucketMailbox: '',
 };
@@ -699,6 +702,9 @@ async function resetState() {
       'autoDeleteUsedIcloudAlias',
       'customPassword',
       'mailProvider',
+      'mailPollMaxAttempts',
+      'mailPollIntervalMs',
+      'mailResendRounds',
       'inbucketHost',
       'inbucketMailbox',
     ]),
@@ -722,6 +728,9 @@ async function resetState() {
     autoDeleteUsedIcloudAlias: Boolean(prev.autoDeleteUsedIcloudAlias),
     customPassword: prev.customPassword || '',
     mailProvider: prev.mailProvider || '163',
+    mailPollMaxAttempts: Number(prev.mailPollMaxAttempts) || 20,
+    mailPollIntervalMs: Number(prev.mailPollIntervalMs) || 3000,
+    mailResendRounds: Number(prev.mailResendRounds) || 3,
     inbucketHost: prev.inbucketHost || '',
     inbucketMailbox: prev.inbucketMailbox || '',
   });
@@ -1274,6 +1283,9 @@ async function handleMessage(message, sender) {
       if (message.payload.autoDeleteUsedIcloudAlias !== undefined) updates.autoDeleteUsedIcloudAlias = Boolean(message.payload.autoDeleteUsedIcloudAlias);
       if (message.payload.customPassword !== undefined) updates.customPassword = message.payload.customPassword;
       if (message.payload.mailProvider !== undefined) updates.mailProvider = message.payload.mailProvider;
+      if (message.payload.mailPollMaxAttempts !== undefined) updates.mailPollMaxAttempts = Number(message.payload.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts;
+      if (message.payload.mailPollIntervalMs !== undefined) updates.mailPollIntervalMs = Number(message.payload.mailPollIntervalMs) || DEFAULT_STATE.mailPollIntervalMs;
+      if (message.payload.mailResendRounds !== undefined) updates.mailResendRounds = Number(message.payload.mailResendRounds) || DEFAULT_STATE.mailResendRounds;
       if (message.payload.inbucketHost !== undefined) updates.inbucketHost = message.payload.inbucketHost;
       if (message.payload.inbucketMailbox !== undefined) updates.inbucketMailbox = message.payload.inbucketMailbox;
       await setState(updates);
@@ -1943,6 +1955,13 @@ function normalizeInbucketOrigin(rawValue) {
   }
 }
 
+function getMailPollConfig(state) {
+  const maxAttempts = Math.min(120, Math.max(1, Number(state?.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts));
+  const intervalMs = Math.min(30000, Math.max(1000, Number(state?.mailPollIntervalMs) || DEFAULT_STATE.mailPollIntervalMs));
+  const resendRounds = Math.min(10, Math.max(1, Number(state?.mailResendRounds) || DEFAULT_STATE.mailResendRounds));
+  return { maxAttempts, intervalMs, resendRounds };
+}
+
 function supportsMailLoginPrompt(mail) {
   return mail && mail.source !== 'inbucket-mail';
 }
@@ -2064,13 +2083,14 @@ async function pollVerificationCodeWithAutoResend(options) {
 }
 
 async function executeStep4(state) {
+  const mailPollConfig = getMailPollConfig(state);
   const pollPayload = {
     filterAfterTimestamp: state.flowStartTime || 0,
     senderFilters: ['openai', 'noreply', 'verify', 'auth', 'forward'],
     subjectFilters: ['verify', 'verification', 'code', '验证', 'confirm'],
     targetEmail: state.email,
-    maxAttempts: 20,
-    intervalMs: 3000,
+    maxAttempts: mailPollConfig.maxAttempts,
+    intervalMs: mailPollConfig.intervalMs,
   };
 
   const mail = getMailConfig(state);
@@ -2108,6 +2128,7 @@ async function executeStep4(state) {
         'input[name="birthday"]',
         'input[name="age"]',
       ],
+      resendRounds: mailPollConfig.resendRounds,
     });
   } catch (err) {
     if (isMailLoginRequiredError(err)) {
@@ -2231,13 +2252,14 @@ async function executeStep6(state) {
 // ============================================================
 
 async function executeStep7(state) {
+  const mailPollConfig = getMailPollConfig(state);
   const pollPayload = {
     filterAfterTimestamp: state.lastEmailTimestamp || state.flowStartTime || 0,
     senderFilters: ['openai', 'noreply', 'verify', 'auth', 'chatgpt', 'forward'],
     subjectFilters: ['verify', 'verification', 'code', '验证', 'confirm', 'login'],
     targetEmail: state.email,
-    maxAttempts: 20,
-    intervalMs: 3000,
+    maxAttempts: mailPollConfig.maxAttempts,
+    intervalMs: mailPollConfig.intervalMs,
   };
 
   const mail = getMailConfig(state);
@@ -2273,6 +2295,7 @@ async function executeStep7(state) {
         'button[type="submit"]._primary_3rdp0_107',
         'button[aria-label*="Continue"]',
       ],
+      resendRounds: mailPollConfig.resendRounds,
     });
   } catch (err) {
     if (isMailLoginRequiredError(err)) {
