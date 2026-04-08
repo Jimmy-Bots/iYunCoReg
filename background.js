@@ -38,6 +38,7 @@ const DEFAULT_STATE = {
   password: null,
   accounts: [], // Successfully completed accounts: { email, password, createdAt }
   manualAliasUsage: {},
+  preservedAliases: {},
   lastEmailTimestamp: null,
   localhostUrl: null,
   flowStartTime: null,
@@ -136,6 +137,10 @@ async function maybeAutoDeleteCompletedIcloudAlias() {
 
   const email = String(state.email || '').trim();
   if (!email) return;
+  if (isAliasPreserved(state, email)) {
+    await addLog(`iCloud: Auto-delete skipped for preserved alias ${email}.`, 'info');
+    return;
+  }
 
   try {
     const aliases = await listIcloudAliases();
@@ -170,6 +175,19 @@ function getManualAliasUsageMap(state) {
     : {};
 }
 
+function getPreservedAliasMap(state) {
+  return state?.preservedAliases && typeof state.preservedAliases === 'object'
+    ? { ...state.preservedAliases }
+    : {};
+}
+
+function isAliasPreserved(state, email) {
+  const normalizedEmail = String(email || '').trim();
+  if (!normalizedEmail) return false;
+  const preservedAliases = getPreservedAliasMap(state);
+  return Boolean(preservedAliases[normalizedEmail]);
+}
+
 function getEffectiveUsedEmails(state) {
   const usedEmails = new Set((state.accounts || []).map(account => String(account?.email || '').trim()).filter(Boolean));
   const manualAliasUsage = getManualAliasUsageMap(state);
@@ -197,6 +215,21 @@ async function setIcloudAliasUsedState(payload = {}) {
   await addLog(`iCloud: Marked ${email} as ${payload.used ? 'used' : 'unused'}`, 'ok');
   broadcastIcloudAliasesChanged({ reason: 'used-updated', email, used: Boolean(payload.used) });
   return { email, used: Boolean(payload.used) };
+}
+
+async function setIcloudAliasPreservedState(payload = {}) {
+  const email = String(payload.email || '').trim();
+  if (!email) {
+    throw new Error('No iCloud alias email was provided.');
+  }
+
+  const state = await getState();
+  const preservedAliases = getPreservedAliasMap(state);
+  preservedAliases[email] = Boolean(payload.preserved);
+  await setState({ preservedAliases });
+  await addLog(`iCloud: Marked ${email} as ${payload.preserved ? 'preserved' : 'not preserved'}`, 'ok');
+  broadcastIcloudAliasesChanged({ reason: 'preserved-updated', email, preserved: Boolean(payload.preserved) });
+  return { email, preserved: Boolean(payload.preserved) };
 }
 
 function getErrorMessage(error) {
@@ -405,6 +438,7 @@ function normalizeIcloudAliasRecord(raw, usedEmails = new Set()) {
     state,
     active: raw?.active !== false && raw?.isActive !== false && state !== 'inactive' && state !== 'deleted',
     used: usedEmails.has(email),
+    preserved: false,
     createdAt,
   };
 }
@@ -420,7 +454,12 @@ async function listIcloudAliases() {
     if (!aliases) return [];
 
     return aliases
-      .map(alias => normalizeIcloudAliasRecord(alias, usedEmails))
+      .map(alias => {
+        const normalized = normalizeIcloudAliasRecord(alias, usedEmails);
+        if (!normalized) return null;
+        normalized.preserved = isAliasPreserved(state, normalized.email);
+        return normalized;
+      })
       .filter(Boolean)
       .sort((a, b) => {
         if (a.active !== b.active) return a.active ? -1 : 1;
@@ -475,10 +514,14 @@ async function deleteIcloudAlias(email) {
 
     const state = await getState();
     const manualAliasUsage = getManualAliasUsageMap(state);
+    const preservedAliases = getPreservedAliasMap(state);
     if (alias.email in manualAliasUsage) {
       delete manualAliasUsage[alias.email];
-      await setState({ manualAliasUsage });
     }
+    if (alias.email in preservedAliases) {
+      delete preservedAliases[alias.email];
+    }
+    await setState({ manualAliasUsage, preservedAliases });
 
     await addLog(`iCloud: Deleted alias ${alias.email}`, 'ok');
     broadcastIcloudAliasesChanged({ reason: 'deleted', email: alias.email });
@@ -498,6 +541,10 @@ async function deleteUsedIcloudAliases() {
   const skipped = [];
 
   for (const alias of usedAliases) {
+    if (alias.preserved) {
+      skipped.push({ email: alias.email, error: 'preserved' });
+      continue;
+    }
     try {
       await deleteIcloudAlias(alias);
       deleted.push(alias.email);
@@ -573,6 +620,7 @@ async function resetState() {
     'seenInbucketMailIds',
     'accounts',
     'manualAliasUsage',
+    'preservedAliases',
     'tabRegistry',
     'language',
     'vpsUrl',
@@ -589,6 +637,7 @@ async function resetState() {
     seenInbucketMailIds: prev.seenInbucketMailIds || [],
     accounts: prev.accounts || [],
     manualAliasUsage: prev.manualAliasUsage && typeof prev.manualAliasUsage === 'object' ? prev.manualAliasUsage : {},
+    preservedAliases: prev.preservedAliases && typeof prev.preservedAliases === 'object' ? prev.preservedAliases : {},
     tabRegistry: prev.tabRegistry || {},
     language: prev.language || 'zh-CN',
     vpsUrl: prev.vpsUrl || '',
@@ -1179,6 +1228,12 @@ async function handleMessage(message, sender) {
     case 'SET_ICLOUD_ALIAS_USED_STATE': {
       clearStopRequest();
       const result = await setIcloudAliasUsedState(message.payload || {});
+      return { ok: true, ...result };
+    }
+
+    case 'SET_ICLOUD_ALIAS_PRESERVED_STATE': {
+      clearStopRequest();
+      const result = await setIcloudAliasPreservedState(message.payload || {});
       return { ok: true, ...result };
     }
 

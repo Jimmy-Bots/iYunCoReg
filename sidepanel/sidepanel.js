@@ -110,6 +110,8 @@ const I18N = {
     btnDelete: '删除',
     btnMarkUsed: '标记已用',
     btnMarkUnused: '标记未用',
+    btnPreserve: '保留',
+    btnUnpreserve: '取消保留',
     btnIcloudLoginDone: '我已登录',
     btnClear: '清空',
     btnSkip: '跳过',
@@ -146,12 +148,18 @@ const I18N = {
     deletingAlias: ({ email }) => `正在删除 ${email}...`,
     deletedAlias: ({ email }) => `已删除 ${email}`,
     deleteFailed: ({ message }) => `删除失败：${message}`,
+    updatingAliasPreserved: ({ email, preserved }) => `正在将 ${email} ${preserved ? '设为保留' : '取消保留'}...`,
+    updatedAliasPreserved: ({ email, preserved }) => `${email} 已${preserved ? '设为保留' : '取消保留'}`,
+    updateAliasPreservedFailed: ({ message }) => `保留设置失败：${message}`,
     updatingAliasUsed: ({ email, used }) => `正在将 ${email} 标记为${used ? '已用' : '未用'}...`,
     updatedAliasUsed: ({ email, used }) => `${email} 已标记为${used ? '已用' : '未用'}`,
     updateAliasUsedFailed: ({ message }) => `标记失败：${message}`,
     deletingUsedAliases: '正在删除已使用的 iCloud 别名...',
     deletedUsedAliases: ({ deleted, skipped }) => skipped ? `已删除 ${deleted} 个已用别名，跳过 ${skipped} 个。` : `已删除 ${deleted} 个已用别名。`,
     bulkDeleteFailed: ({ message }) => `批量删除失败：${message}`,
+    confirmDeleteAlias: ({ email }) => `确认删除 ${email} 吗？此操作不可撤销。`,
+    confirmDeleteUsedAliases: '确认删除所有未保留的已用 iCloud 别名吗？此操作不可撤销。',
+    confirmEnableAutoDelete: '确认开启“成功使用后自动删除 iCloud 别名”吗？开启后，非保留邮箱在流程成功完成后会被自动删除。',
     icloudLoginRequiredToast: '需要登录 iCloud，我已经为你打开登录页。',
     icloudLoginHelpTitle: '需要登录 iCloud',
     icloudLoginHelpText: ({ host }) => `我已经为你打开 ${host}。请在那个页面完成登录，然后回到这里点击“我已登录”。`,
@@ -217,6 +225,8 @@ const I18N = {
     btnDelete: 'Delete',
     btnMarkUsed: 'Mark Used',
     btnMarkUnused: 'Mark Unused',
+    btnPreserve: 'Preserve',
+    btnUnpreserve: 'Unpreserve',
     btnIcloudLoginDone: "I've Signed In",
     btnClear: 'Clear',
     btnSkip: 'Skip',
@@ -253,12 +263,18 @@ const I18N = {
     deletingAlias: ({ email }) => `Deleting ${email}...`,
     deletedAlias: ({ email }) => `Deleted ${email}`,
     deleteFailed: ({ message }) => `Delete failed: ${message}`,
+    updatingAliasPreserved: ({ email, preserved }) => `${preserved ? 'Preserving' : 'Unpreserving'} ${email}...`,
+    updatedAliasPreserved: ({ email, preserved }) => `${email} ${preserved ? 'preserved' : 'unpreserved'}`,
+    updateAliasPreservedFailed: ({ message }) => `Failed to update preserve state: ${message}`,
     updatingAliasUsed: ({ email, used }) => `Marking ${email} as ${used ? 'used' : 'unused'}...`,
     updatedAliasUsed: ({ email, used }) => `${email} marked as ${used ? 'used' : 'unused'}`,
     updateAliasUsedFailed: ({ message }) => `Failed to update used state: ${message}`,
     deletingUsedAliases: 'Deleting used iCloud aliases...',
     deletedUsedAliases: ({ deleted, skipped }) => skipped ? `Deleted ${deleted} used aliases, ${skipped} skipped.` : `Deleted ${deleted} used aliases.`,
     bulkDeleteFailed: ({ message }) => `Bulk delete failed: ${message}`,
+    confirmDeleteAlias: ({ email }) => `Delete ${email}? This action cannot be undone.`,
+    confirmDeleteUsedAliases: 'Delete all used iCloud aliases that are not preserved? This action cannot be undone.',
+    confirmEnableAutoDelete: 'Enable automatic deletion after successful use? Non-preserved aliases will be deleted automatically when the flow completes successfully.',
     icloudLoginRequiredToast: 'iCloud sign-in is required. A login page has been opened for you.',
     icloudLoginHelpTitle: 'iCloud sign-in required',
     icloudLoginHelpText: ({ host }) => `We opened ${host} for you. Please finish sign-in there, then return here and click "I've Signed In".`,
@@ -720,8 +736,9 @@ function renderIcloudAliases(aliases = []) {
   }
 
   const usedCount = aliases.filter(alias => alias.used).length;
+  const deletableUsedCount = aliases.filter(alias => alias.used && !alias.preserved).length;
   icloudSummary.textContent = t('icloudAliasesLoaded', { count: aliases.length, usedCount });
-  btnIcloudDeleteUsed.disabled = usedCount === 0;
+  btnIcloudDeleteUsed.disabled = deletableUsedCount === 0;
 
   for (const alias of aliases) {
     const item = document.createElement('div');
@@ -732,18 +749,23 @@ function renderIcloudAliases(aliases = []) {
         <div class="icloud-item-meta">
           ${alias.used ? `<span class="icloud-tag used">${escapeHtml(currentLanguage === 'zh-CN' ? '已用' : 'Used')}</span>` : ''}
           ${!alias.used && alias.active ? `<span class="icloud-tag active">${escapeHtml(currentLanguage === 'zh-CN' ? '可用' : 'Active')}</span>` : ''}
+          ${alias.preserved ? `<span class="icloud-tag">${escapeHtml(currentLanguage === 'zh-CN' ? '保留' : 'Preserved')}</span>` : ''}
           ${alias.label ? `<span class="icloud-tag">${escapeHtml(alias.label)}</span>` : ''}
           ${alias.note ? `<span class="icloud-tag">${escapeHtml(alias.note)}</span>` : ''}
         </div>
       </div>
       <div class="icloud-item-actions">
         <button class="btn btn-outline btn-xs" type="button" data-action="toggle-used">${escapeHtml(alias.used ? t('btnMarkUnused') : t('btnMarkUsed'))}</button>
+        <button class="btn btn-outline btn-xs" type="button" data-action="toggle-preserved">${escapeHtml(alias.preserved ? t('btnUnpreserve') : t('btnPreserve'))}</button>
         <button class="btn btn-outline btn-xs" type="button" data-action="delete">${escapeHtml(t('btnDelete'))}</button>
       </div>
     `;
 
     item.querySelector('[data-action="toggle-used"]').addEventListener('click', async () => {
       await setSingleIcloudAliasUsedState(alias, !alias.used);
+    });
+    item.querySelector('[data-action="toggle-preserved"]').addEventListener('click', async () => {
+      await setSingleIcloudAliasPreservedState(alias, !alias.preserved);
     });
     item.querySelector('[data-action="delete"]').addEventListener('click', async () => {
       await deleteSingleIcloudAlias(alias);
@@ -785,6 +807,10 @@ function queueIcloudAliasRefresh() {
 }
 
 async function deleteSingleIcloudAlias(alias) {
+  if (!confirm(t('confirmDeleteAlias', { email: alias.email }))) {
+    return;
+  }
+
   setIcloudLoadingState(true, t('deletingAlias', { email: alias.email }));
   try {
     const response = await chrome.runtime.sendMessage({
@@ -822,7 +848,30 @@ async function setSingleIcloudAliasUsedState(alias, used) {
   }
 }
 
+async function setSingleIcloudAliasPreservedState(alias, preserved) {
+  setIcloudLoadingState(true, t('updatingAliasPreserved', { email: alias.email, preserved }));
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'SET_ICLOUD_ALIAS_PRESERVED_STATE',
+      source: 'sidepanel',
+      payload: { email: alias.email, preserved },
+    });
+    if (response?.error) throw new Error(response.error);
+    showToast(t('updatedAliasPreserved', { email: alias.email, preserved }), 'success', 2500);
+    await refreshIcloudAliases({ silent: true });
+  } catch (err) {
+    showToast(t('updateAliasPreservedFailed', { message: err.message }), 'error');
+    icloudSummary.textContent = err.message;
+  } finally {
+    btnIcloudRefresh.disabled = false;
+  }
+}
+
 async function deleteUsedIcloudAliases() {
+  if (!confirm(t('confirmDeleteUsedAliases'))) {
+    return;
+  }
+
   setIcloudLoadingState(true, t('deletingUsedAliases'));
   try {
     const response = await chrome.runtime.sendMessage({
@@ -1028,6 +1077,11 @@ inputPassword.addEventListener('change', async () => {
 });
 
 checkboxAutoDeleteIcloud.addEventListener('change', async () => {
+  if (checkboxAutoDeleteIcloud.checked && !confirm(t('confirmEnableAutoDelete'))) {
+    checkboxAutoDeleteIcloud.checked = false;
+    return;
+  }
+
   await chrome.runtime.sendMessage({
     type: 'SAVE_SETTING',
     source: 'sidepanel',
