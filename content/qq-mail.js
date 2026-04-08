@@ -31,7 +31,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ stopped: true, error: err.message });
         return;
       }
-      reportError(message.step, err.message);
+      log(`Step ${message.step}: Poll attempt failed, background will decide whether to resend/retry: ${err.message}`, 'warn');
       sendResponse({ error: err.message });
     });
     return true; // async response
