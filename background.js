@@ -48,6 +48,7 @@ const DEFAULT_STATE = {
   logs: [],
   vpsUrl: '',
   customPassword: '',
+  icloudHostPreference: 'auto',
   preferredIcloudHost: '',
   mailProvider: '163', // 'qq', '163', 'gmail', or 'inbucket'
   mailPollMaxAttempts: 20,
@@ -323,6 +324,12 @@ function normalizeIcloudHost(rawHost) {
   return '';
 }
 
+function getConfiguredIcloudHostPreference(state) {
+  const preference = String(state?.icloudHostPreference || '').trim().toLowerCase();
+  if (preference === 'auto') return '';
+  return normalizeIcloudHost(preference);
+}
+
 function getIcloudLoginUrlForHost(host) {
   const normalizedHost = normalizeIcloudHost(host);
   if (normalizedHost === 'icloud.com') return 'https://www.icloud.com/';
@@ -379,12 +386,17 @@ async function getOpenIcloudHostPreference() {
 }
 
 async function getPreferredIcloudLoginUrl(error, state = null) {
+  const currentState = state || await getState();
+  const configuredHost = getConfiguredIcloudHostPreference(currentState);
+  if (configuredHost) {
+    return getIcloudLoginUrlForHost(configuredHost);
+  }
+
   const messageHint = getIcloudHostHintFromMessage(getErrorMessage(error));
   if (messageHint) {
     return getIcloudLoginUrlForHost(messageHint);
   }
 
-  const currentState = state || await getState();
   const savedHost = normalizeIcloudHost(currentState?.preferredIcloudHost);
   if (savedHost) {
     return getIcloudLoginUrlForHost(savedHost);
@@ -793,6 +805,7 @@ async function resetState() {
       'vpsUrl',
       'autoDeleteUsedIcloudAlias',
       'customPassword',
+      'icloudHostPreference',
       'preferredIcloudHost',
       'mailProvider',
       'mailPollMaxAttempts',
@@ -820,6 +833,7 @@ async function resetState() {
     vpsUrl: prev.vpsUrl || '',
     autoDeleteUsedIcloudAlias: Boolean(prev.autoDeleteUsedIcloudAlias),
     customPassword: prev.customPassword || '',
+    icloudHostPreference: prev.icloudHostPreference || 'auto',
     preferredIcloudHost: prev.preferredIcloudHost || '',
     mailProvider: prev.mailProvider || '163',
     mailPollMaxAttempts: Number(prev.mailPollMaxAttempts) || 20,
@@ -1376,6 +1390,7 @@ async function handleMessage(message, sender) {
       if (message.payload.vpsUrl !== undefined) updates.vpsUrl = message.payload.vpsUrl;
       if (message.payload.autoDeleteUsedIcloudAlias !== undefined) updates.autoDeleteUsedIcloudAlias = Boolean(message.payload.autoDeleteUsedIcloudAlias);
       if (message.payload.customPassword !== undefined) updates.customPassword = message.payload.customPassword;
+      if (message.payload.icloudHostPreference !== undefined) updates.icloudHostPreference = message.payload.icloudHostPreference;
       if (message.payload.mailProvider !== undefined) updates.mailProvider = message.payload.mailProvider;
       if (message.payload.mailPollMaxAttempts !== undefined) updates.mailPollMaxAttempts = Number(message.payload.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts;
       if (message.payload.mailPollIntervalMs !== undefined) updates.mailPollIntervalMs = Number(message.payload.mailPollIntervalMs) || DEFAULT_STATE.mailPollIntervalMs;

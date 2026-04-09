@@ -50,6 +50,7 @@ const btnClearLog = document.getElementById('btn-clear-log');
 const selectLanguage = document.getElementById('select-language');
 const inputVpsUrl = document.getElementById('input-vps-url');
 const btnPasteVpsUrl = document.getElementById('btn-paste-vps-url');
+const selectIcloudHostPreference = document.getElementById('select-icloud-host-preference');
 const selectMailProvider = document.getElementById('select-mail-provider');
 const inputMailPollAttempts = document.getElementById('input-mail-poll-attempts');
 const inputMailPollInterval = document.getElementById('input-mail-poll-interval');
@@ -102,6 +103,7 @@ const I18N = {
     labelLanguage: '语言',
     labelAlias: '别名',
     labelCleanup: '清理',
+    labelIcloudHost: 'iCloud',
     labelVerify: '验证',
     labelMailWait: '轮询',
     labelMailResend: '重发',
@@ -112,6 +114,9 @@ const I18N = {
     labelOauth: 'OAuth',
     labelCallback: '回调',
     icloudAliasName: 'iCloud Hide My Email',
+    icloudHostAuto: '自动',
+    icloudHostCom: 'iCloud.com',
+    icloudHostCn: 'iCloud.com.cn',
     cleanupAutoDelete: '成功使用后自动删除 iCloud 别名',
     mailProvider163: '163 邮箱 (mail.163.com)',
     mailProviderQq: 'QQ 邮箱 (wx.mail.qq.com)',
@@ -249,6 +254,7 @@ const I18N = {
     labelLanguage: 'Language',
     labelAlias: 'Alias',
     labelCleanup: 'Cleanup',
+    labelIcloudHost: 'iCloud',
     labelVerify: 'Verify',
     labelMailWait: 'Poll',
     labelMailResend: 'Resend',
@@ -259,6 +265,9 @@ const I18N = {
     labelOauth: 'OAuth',
     labelCallback: 'Callback',
     icloudAliasName: 'iCloud Hide My Email',
+    icloudHostAuto: 'Auto',
+    icloudHostCom: 'iCloud.com',
+    icloudHostCn: 'iCloud.com.cn',
     cleanupAutoDelete: 'Delete iCloud alias after successful use',
     mailProvider163: '163 Mail (mail.163.com)',
     mailProviderQq: 'QQ Mail (wx.mail.qq.com)',
@@ -549,6 +558,7 @@ async function restoreState() {
     if (state.language) {
       selectLanguage.value = state.language;
     }
+    selectIcloudHostPreference.value = state.icloudHostPreference || 'auto';
     if (state.mailProvider) {
       selectMailProvider.value = state.mailProvider;
     }
@@ -1474,6 +1484,14 @@ checkboxAutoDeleteIcloud.addEventListener('change', async () => {
     type: 'SAVE_SETTING',
     source: 'sidepanel',
     payload: { autoDeleteUsedIcloudAlias: checkboxAutoDeleteIcloud.checked },
+  });
+});
+
+selectIcloudHostPreference.addEventListener('change', async () => {
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { icloudHostPreference: selectIcloudHostPreference.value || 'auto' },
   });
 });
 
