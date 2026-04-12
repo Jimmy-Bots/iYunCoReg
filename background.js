@@ -2094,20 +2094,32 @@ async function continueAutoRun() {
 // ============================================================
 
 async function executeStep1(state) {
-  if (!state.vpsUrl) {
-    throw new Error('No CPA Auth URL configured. Enter the CPA Auth address in Side Panel first.');
+  const authPanel = getAuthPanelConfig(state);
+  if (authPanel.error) {
+    throw new Error(authPanel.error);
   }
-  await addLog('Step 1: Opening CPA Auth panel...');
-  await reuseOrCreateTab('vps-panel', state.vpsUrl, {
-    inject: ['content/utils.js', 'content/vps-panel.js'],
-    reloadIfSameUrl: true,
+
+  if (authPanel.provider === 'sub2api' && !String(state.email || '').trim()) {
+    await addLog('Step 1: Sub2API requires an account name. Generating email first...');
+    await fetchConfiguredEmail({ generateNew: true });
+    state = await getState();
+  }
+
+  await addLog(`Step 1: Opening ${authPanel.label} panel...`);
+  await reuseOrCreateTab(authPanel.source, authPanel.url, {
+    inject: authPanel.inject,
+    injectSource: authPanel.injectSource,
+    reloadIfSameUrl: authPanel.reloadIfSameUrl,
   });
 
-  await sendToContentScript('vps-panel', {
+  await sendToContentScript(authPanel.source, {
     type: 'EXECUTE_STEP',
     step: 1,
     source: 'background',
-    payload: {},
+    payload: {
+      email: state.email,
+      authPanelProvider: authPanel.provider,
+    },
   });
 }
 
@@ -2227,6 +2239,44 @@ function normalizeInbucketOrigin(rawValue) {
   } catch {
     return '';
   }
+}
+
+function getAuthPanelProvider(state) {
+  const rawUrl = String(state?.vpsUrl || '').trim().toLowerCase();
+  if (rawUrl.includes('/admin/accounts')) return 'sub2api';
+  return 'cpa';
+}
+
+function getAuthPanelConfig(state) {
+  const url = String(state?.vpsUrl || '').trim();
+  if (!url) {
+    return {
+      error: 'No Auth panel URL configured. Enter the CPA Auth or Sub2API address in the side panel first.',
+    };
+  }
+
+  const provider = getAuthPanelProvider(state);
+  if (provider === 'sub2api') {
+    return {
+      provider,
+      source: 'sub2api-panel',
+      url,
+      label: 'Sub2API',
+      inject: ['content/utils.js', 'content/sub2api-panel.js'],
+      injectSource: 'sub2api-panel',
+      reloadIfSameUrl: false,
+    };
+  }
+
+  return {
+    provider: 'cpa',
+    source: 'vps-panel',
+    url,
+    label: 'CPA Auth',
+    inject: ['content/utils.js', 'content/vps-panel.js'],
+    injectSource: 'vps-panel',
+    reloadIfSameUrl: true,
+  };
 }
 
 function getMailPollConfig(state) {
@@ -2475,9 +2525,11 @@ async function executeStep5(state) {
 }
 
 async function refreshOAuthIfTimedOutBeforeStep6(state) {
+  const authPanel = getAuthPanelConfig(state);
+
   if (state.forceRefreshOAuthBeforeStep6) {
     if (!state.vpsUrl) {
-      await addLog('Step 6: Force refresh is enabled, but CPA Auth URL is empty. Continuing with the current OAuth URL.', 'warn');
+      await addLog('Step 6: Force refresh is enabled, but Auth panel URL is empty. Continuing with the current OAuth URL.', 'warn');
       return state;
     }
 
@@ -2497,15 +2549,20 @@ async function refreshOAuthIfTimedOutBeforeStep6(state) {
     return state;
   }
 
-  await addLog('Step 6: Checking CPA Auth status before login...');
+  if (authPanel.provider === 'sub2api') {
+    await addLog('Step 6: Sub2API does not expose OAuth timeout status. Continuing with the current OAuth URL unless force refresh is enabled.');
+    return state;
+  }
+
+  await addLog(`Step 6: Checking ${authPanel.label} status before login...`);
 
   try {
-    const vpsTabId = await reuseOrCreateTab('vps-panel', state.vpsUrl, {
-      inject: ['content/utils.js', 'content/vps-panel.js'],
-      injectSource: 'vps-panel',
+    const panelTabId = await reuseOrCreateTab(authPanel.source, authPanel.url, {
+      inject: authPanel.inject,
+      injectSource: authPanel.injectSource,
     });
 
-    const response = await sendToTabWithRetry(vpsTabId, {
+    const response = await sendToTabWithRetry(panelTabId, {
       type: 'CHECK_OAUTH_TIMEOUT_STATUS',
       source: 'background',
     }, {
@@ -2518,7 +2575,7 @@ async function refreshOAuthIfTimedOutBeforeStep6(state) {
     }
 
     if (response?.oauthActive) {
-      await addLog('Step 6: CPA Auth indicates the current OAuth link is still active. Continuing login...', 'ok');
+      await addLog(`Step 6: ${authPanel.label} indicates the current OAuth link is still active. Continuing login...`, 'ok');
       return state;
     }
 
@@ -2527,7 +2584,7 @@ async function refreshOAuthIfTimedOutBeforeStep6(state) {
     }
 
     const timeoutText = response.statusText || '认证失败: Timeout waiting for OAuth callback';
-    await addLog(`Step 6: CPA Auth reported OAuth timeout. Refreshing OAuth link... (${timeoutText})`, 'warn');
+    await addLog(`Step 6: ${authPanel.label} reported OAuth timeout. Refreshing OAuth link... (${timeoutText})`, 'warn');
 
     await executeStepAndWait(1, 1500);
 
@@ -2539,7 +2596,7 @@ async function refreshOAuthIfTimedOutBeforeStep6(state) {
     await addLog('Step 6: New OAuth link obtained after timeout. Continuing login...', 'ok');
     return refreshedState;
   } catch (err) {
-    await addLog(`Step 6: CPA Auth timeout check could not be completed, continuing with current OAuth URL. ${getErrorMessage(err)}`, 'warn');
+    await addLog(`Step 6: ${authPanel.label} timeout check could not be completed, continuing with current OAuth URL. ${getErrorMessage(err)}`, 'warn');
     return state;
   }
 }
@@ -2550,15 +2607,22 @@ async function refreshOAuthIfTimedOutBeforeStep7Resend() {
     return state;
   }
 
-  await addLog('Step 7 resend: Checking CPA Auth status before requesting a new verification email...');
+  const authPanel = getAuthPanelConfig(state);
+  if (authPanel.provider === 'sub2api') {
+    await addLog('Step 7 resend: Sub2API timeout status is unavailable. Regenerating OAuth link before requesting a new verification email...', 'warn');
+    await executeStepAndWait(1, 1500);
+    return await getState();
+  }
+
+  await addLog(`Step 7 resend: Checking ${authPanel.label} status before requesting a new verification email...`);
 
   try {
-    const vpsTabId = await reuseOrCreateTab('vps-panel', state.vpsUrl, {
-      inject: ['content/utils.js', 'content/vps-panel.js'],
-      injectSource: 'vps-panel',
+    const panelTabId = await reuseOrCreateTab(authPanel.source, authPanel.url, {
+      inject: authPanel.inject,
+      injectSource: authPanel.injectSource,
     });
 
-    const response = await sendToTabWithRetry(vpsTabId, {
+    const response = await sendToTabWithRetry(panelTabId, {
       type: 'CHECK_OAUTH_TIMEOUT_STATUS',
       source: 'background',
     }, {
@@ -2571,7 +2635,7 @@ async function refreshOAuthIfTimedOutBeforeStep7Resend() {
     }
 
     if (response?.oauthActive) {
-      await addLog('Step 7 resend: CPA Auth indicates the current OAuth link is still active.', 'ok');
+      await addLog(`Step 7 resend: ${authPanel.label} indicates the current OAuth link is still active.`, 'ok');
       return state;
     }
 
@@ -2580,7 +2644,7 @@ async function refreshOAuthIfTimedOutBeforeStep7Resend() {
     }
 
     const timeoutText = response.statusText || '认证失败: Timeout waiting for OAuth callback';
-    await addLog(`Step 7 resend: CPA Auth reported OAuth timeout. Refreshing OAuth link... (${timeoutText})`, 'warn');
+    await addLog(`Step 7 resend: ${authPanel.label} reported OAuth timeout. Refreshing OAuth link... (${timeoutText})`, 'warn');
 
     await executeStepAndWait(1, 1500);
 
@@ -2592,7 +2656,7 @@ async function refreshOAuthIfTimedOutBeforeStep7Resend() {
     await addLog('Step 7 resend: New OAuth link obtained after timeout.', 'ok');
     return refreshedState;
   } catch (err) {
-    await addLog(`Step 7 resend: CPA Auth timeout check could not be completed, continuing with current OAuth URL. ${getErrorMessage(err)}`, 'warn');
+    await addLog(`Step 7 resend: ${authPanel.label} timeout check could not be completed, continuing with current OAuth URL. ${getErrorMessage(err)}`, 'warn');
     return state;
   }
 }
@@ -2862,18 +2926,20 @@ async function executeStep9(state) {
   if (!state.localhostUrl) {
     throw new Error('No localhost URL. Complete step 8 first.');
   }
-  if (!state.vpsUrl) {
-    throw new Error('CPA Auth URL not set. Please enter the CPA Auth URL in the side panel.');
+
+  const authPanel = getAuthPanelConfig(state);
+  if (authPanel.error) {
+    throw new Error(authPanel.error);
   }
 
-  await addLog('Step 9: Opening CPA Auth panel...');
+  await addLog(`Step 9: Opening ${authPanel.label} panel...`);
 
-  let tabId = await getTabId('vps-panel');
-  const alive = tabId && await isTabAlive('vps-panel');
+  let tabId = await getTabId(authPanel.source);
+  const alive = tabId && await isTabAlive(authPanel.source);
 
   if (!alive) {
     // Create new tab
-    const tab = await chrome.tabs.create({ url: state.vpsUrl, active: true });
+    const tab = await chrome.tabs.create({ url: authPanel.url, active: true });
     tabId = tab.id;
     await new Promise(resolve => {
       const listener = (tid, info) => {
@@ -2889,19 +2955,31 @@ async function executeStep9(state) {
   }
 
   // Inject scripts directly and wait for them to be ready
+  if (authPanel.injectSource) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (injectedSource) => {
+        window.__MULTIPAGE_SOURCE = injectedSource;
+      },
+      args: [authPanel.injectSource],
+    });
+  }
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ['content/utils.js', 'content/vps-panel.js'],
+    files: authPanel.inject,
   });
   await new Promise(r => setTimeout(r, 1000));
 
-  // Send command directly — bypass queue/ready mechanism
-  await addLog(`Step 9: Filling callback URL...`);
+  await addLog(`Step 9: Completing authorization in ${authPanel.label}...`);
   await chrome.tabs.sendMessage(tabId, {
     type: 'EXECUTE_STEP',
     step: 9,
     source: 'background',
-    payload: { localhostUrl: state.localhostUrl },
+    payload: {
+      localhostUrl: state.localhostUrl,
+      email: state.email,
+      authPanelProvider: authPanel.provider,
+    },
   });
 }
 
