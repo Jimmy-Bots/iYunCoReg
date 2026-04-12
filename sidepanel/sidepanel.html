@@ -63,20 +63,17 @@
         <select id="select-email-source" class="data-select">
           <option value="icloud" data-i18n="emailSourceIcloud">iCloud Hide My Email</option>
           <option value="duck" data-i18n="emailSourceDuck">Duck Mail</option>
+          <option value="spamok" data-i18n="emailSourceSpamok">SpamOK</option>
         </select>
       </div>
-      <div class="data-row">
-        <span class="data-label" data-i18n="labelAlias">Alias</span>
-        <span class="data-value" data-i18n="icloudAliasName">iCloud Hide My Email</span>
-      </div>
-      <div class="data-row">
+      <div class="data-row" id="row-icloud-cleanup">
         <span class="data-label" data-i18n="labelCleanup">Cleanup</span>
         <label class="option-toggle" for="checkbox-auto-delete-icloud">
           <input type="checkbox" id="checkbox-auto-delete-icloud" />
           <span data-i18n="cleanupAutoDelete">Delete iCloud alias after successful use</span>
         </label>
       </div>
-      <div class="data-row">
+      <div class="data-row" id="row-icloud-host">
         <span class="data-label" data-i18n="labelIcloudHost">iCloud</span>
         <select id="select-icloud-host-preference" class="data-select">
           <option value="auto" data-i18n="icloudHostAuto">Auto</option>

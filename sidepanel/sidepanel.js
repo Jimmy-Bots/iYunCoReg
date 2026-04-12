@@ -25,6 +25,8 @@ const btnIcloudRefresh = document.getElementById('btn-icloud-refresh');
 const btnIcloudDeleteUsed = document.getElementById('btn-icloud-delete-used');
 const checkboxAutoDeleteIcloud = document.getElementById('checkbox-auto-delete-icloud');
 const checkboxForceRefreshOAuthBeforeStep6 = document.getElementById('checkbox-force-refresh-oauth-before-step6');
+const rowIcloudCleanup = document.getElementById('row-icloud-cleanup');
+const rowIcloudHost = document.getElementById('row-icloud-host');
 const inputIcloudSearch = document.getElementById('input-icloud-search');
 const selectIcloudFilter = document.getElementById('select-icloud-filter');
 const checkboxIcloudSelectAll = document.getElementById('checkbox-icloud-select-all');
@@ -120,6 +122,7 @@ const I18N = {
     icloudAliasName: 'iCloud Hide My Email',
     emailSourceIcloud: 'iCloud Hide My Email',
     emailSourceDuck: 'Duck Mail',
+    emailSourceSpamok: 'SpamOK',
     icloudHostAuto: '自动',
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
@@ -139,6 +142,7 @@ const I18N = {
     placeholderEmail: '使用 Auto 生成 iCloud 别名，或手动粘贴',
     placeholderEmailIcloud: '使用 Auto 生成 iCloud 别名，或手动粘贴',
     placeholderEmailDuck: '使用 Auto 获取 Duck 邮箱，或手动粘贴',
+    placeholderEmailSpamok: '使用 Auto 生成 SpamOK 邮箱，或手动粘贴',
     placeholderPassword: '留空则自动生成',
     waiting: '等待中...',
     btnConfirm: '确定',
@@ -186,6 +190,7 @@ const I18N = {
     autoHintEmail: '使用 Auto 生成 iCloud 别名，或手动粘贴后继续',
     autoHintEmailIcloud: '使用 Auto 生成 iCloud 别名，或手动粘贴后继续',
     autoHintEmailDuck: '使用 Auto 获取 Duck 邮箱，或手动粘贴后继续',
+    autoHintEmailSpamok: '使用 Auto 生成 SpamOK 邮箱，或手动粘贴后继续',
     autoHintError: '自动运行被错误中断。修复问题或跳过失败步骤后继续',
     fetchedEmail: ({ email }) => `已获取 ${email}`,
     autoFetchFailed: ({ message }) => `自动获取失败：${message}`,
@@ -280,6 +285,7 @@ const I18N = {
     icloudAliasName: 'iCloud Hide My Email',
     emailSourceIcloud: 'iCloud Hide My Email',
     emailSourceDuck: 'Duck Mail',
+    emailSourceSpamok: 'SpamOK',
     icloudHostAuto: 'Auto',
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
@@ -299,6 +305,7 @@ const I18N = {
     placeholderEmail: 'Use Auto to generate an iCloud alias, or paste manually',
     placeholderEmailIcloud: 'Use Auto to generate an iCloud alias, or paste manually',
     placeholderEmailDuck: 'Use Auto to fetch a Duck Mail address, or paste manually',
+    placeholderEmailSpamok: 'Use Auto to generate a SpamOK address, or paste manually',
     placeholderPassword: 'Leave blank to auto-generate',
     waiting: 'Waiting...',
     btnConfirm: 'OK',
@@ -346,6 +353,7 @@ const I18N = {
     autoHintEmail: 'Use Auto to generate an iCloud alias, or paste manually, then continue',
     autoHintEmailIcloud: 'Use Auto to generate an iCloud alias, or paste manually, then continue',
     autoHintEmailDuck: 'Use Auto to fetch a Duck Mail address, or paste manually, then continue',
+    autoHintEmailSpamok: 'Use Auto to generate a SpamOK address, or paste manually, then continue',
     autoHintError: 'Auto run was interrupted by an error. Fix it or skip the failed step, then continue',
     fetchedEmail: ({ email }) => `Fetched ${email}`,
     autoFetchFailed: ({ message }) => `Auto fetch failed: ${message}`,
@@ -438,25 +446,28 @@ function getCopyLabel(kind) {
 }
 
 function getSelectedEmailSource() {
-  return selectEmailSource?.value === 'duck' ? 'duck' : 'icloud';
+  const emailSource = String(selectEmailSource?.value || '').trim().toLowerCase();
+  if (emailSource === 'duck') return 'duck';
+  if (emailSource === 'spamok') return 'spamok';
+  return 'icloud';
 }
 
 function getSelectedEmailSourceLabel() {
-  return getSelectedEmailSource() === 'duck'
-    ? t('emailSourceDuck')
-    : t('emailSourceIcloud');
+  if (getSelectedEmailSource() === 'duck') return t('emailSourceDuck');
+  if (getSelectedEmailSource() === 'spamok') return t('emailSourceSpamok');
+  return t('emailSourceIcloud');
 }
 
 function getEmailPlaceholderText() {
-  return getSelectedEmailSource() === 'duck'
-    ? t('placeholderEmailDuck')
-    : t('placeholderEmailIcloud');
+  if (getSelectedEmailSource() === 'duck') return t('placeholderEmailDuck');
+  if (getSelectedEmailSource() === 'spamok') return t('placeholderEmailSpamok');
+  return t('placeholderEmailIcloud');
 }
 
 function getAutoHintEmailText() {
-  return getSelectedEmailSource() === 'duck'
-    ? t('autoHintEmailDuck')
-    : t('autoHintEmailIcloud');
+  if (getSelectedEmailSource() === 'duck') return t('autoHintEmailDuck');
+  if (getSelectedEmailSource() === 'spamok') return t('autoHintEmailSpamok');
+  return t('autoHintEmailIcloud');
 }
 
 function applyLanguage(language) {
@@ -658,20 +669,26 @@ function syncPasswordField(state) {
 }
 
 function updateMailProviderUI() {
+  const useSpamok = getSelectedEmailSource() === 'spamok';
   const useInbucket = selectMailProvider.value === 'inbucket';
-  rowMailProvider.style.display = '';
-  rowInbucketHost.style.display = useInbucket ? '' : 'none';
-  rowInbucketMailbox.style.display = useInbucket ? '' : 'none';
+  rowMailProvider.style.display = useSpamok ? 'none' : '';
+  rowInbucketHost.style.display = !useSpamok && useInbucket ? '' : 'none';
+  rowInbucketMailbox.style.display = !useSpamok && useInbucket ? '' : 'none';
 }
 
 function updateEmailSourceUI() {
+  const useNonIcloudSource = getSelectedEmailSource() !== 'icloud';
+
   inputEmail.placeholder = getEmailPlaceholderText();
   autoHint.textContent = autoContinueBar.dataset.reason === 'error'
     ? t('autoHintError')
     : getAutoHintEmailText();
   btnFetchEmail.disabled = false;
   btnFetchEmail.title = t('titleFetchEmail', { source: getSelectedEmailSourceLabel() });
-  icloudSection.style.display = '';
+  rowIcloudCleanup.style.display = useNonIcloudSource ? 'none' : '';
+  rowIcloudHost.style.display = useNonIcloudSource ? 'none' : '';
+  icloudSection.style.display = useNonIcloudSource ? 'none' : '';
+  updateMailProviderUI();
 }
 
 // ============================================================

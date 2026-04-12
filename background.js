@@ -794,13 +794,16 @@ async function fetchIcloudHideMyEmail() {
 async function fetchConfiguredEmail(options = {}) {
   const state = await getState();
   const emailSource = getEmailSource(state);
-  return emailSource === 'duck'
-    ? fetchDuckEmail(options)
-    : fetchIcloudHideMyEmail();
+  if (emailSource === 'duck') return fetchDuckEmail(options);
+  if (emailSource === 'spamok') return fetchSpamokEmail(options);
+  return fetchIcloudHideMyEmail();
 }
 
 function getEmailSource(state) {
-  return state?.emailSource === 'duck' ? 'duck' : 'icloud';
+  const emailSource = String(state?.emailSource || '').trim().toLowerCase();
+  if (emailSource === 'duck') return 'duck';
+  if (emailSource === 'spamok') return 'spamok';
+  return 'icloud';
 }
 
 async function fetchDuckEmail(options = {}) {
@@ -826,6 +829,53 @@ async function fetchDuckEmail(options = {}) {
   await setEmailState(result.email);
   await addLog(`Duck Mail: ${result.generated ? 'Generated' : 'Loaded'} ${result.email}`, 'ok');
   return result.email;
+}
+
+function generateSpamokMailboxName() {
+  const prefixes = [
+    'blue', 'cloud', 'fast', 'green', 'lucky', 'mint', 'nova', 'prime', 'quiet', 'silver',
+    'smart', 'solar', 'swift', 'tiny', 'ultra', 'urban', 'vivid', 'wild', 'zen', 'bright',
+  ];
+  const stems = [
+    'bird', 'box', 'cloud', 'field', 'fox', 'gate', 'leaf', 'mail', 'note', 'path',
+    'pine', 'river', 'road', 'rock', 'star', 'stone', 'wave', 'wind', 'wolf', 'yard',
+  ];
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const stem = stems[Math.floor(Math.random() * stems.length)];
+    const digitsLength = Math.floor(Math.random() * 4) + 2; // 2-5
+    let digits = '';
+    for (let i = 0; i < digitsLength; i++) {
+      digits += String(Math.floor(Math.random() * 10));
+    }
+
+    const mailbox = `${prefix}${stem}${digits}`.toLowerCase();
+    if (mailbox.length >= 6 && mailbox.length <= 30) {
+      return mailbox;
+    }
+  }
+
+  return `mailbox${Date.now().toString().slice(-6)}`;
+}
+
+async function fetchSpamokEmail(options = {}) {
+  throwIfStopped();
+  const { generateNew = true } = options;
+  const state = await getState();
+  const currentEmail = String(state.email || '').trim();
+
+  if (!generateNew && /@spamok\.com$/i.test(currentEmail)) {
+    await setEmailState(currentEmail);
+    await addLog(`SpamOK: Reusing ${currentEmail}`, 'ok');
+    return currentEmail;
+  }
+
+  const mailbox = generateSpamokMailboxName();
+  const email = `${mailbox}@spamok.com`;
+  await setEmailState(email);
+  await addLog(`SpamOK: Generated ${email}`, 'ok');
+  return email;
 }
 
 async function resetState() {
@@ -1140,7 +1190,7 @@ async function reuseOrCreateTab(source, url, options = {}) {
 async function sendToContentScript(source, message, options = {}) {
   const readyTimeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
     ? options.timeoutMs
-    : (source === 'inbucket-mail' ? 60000 : 15000);
+    : ((source === 'inbucket-mail' || source === 'spamok-mail') ? 60000 : 15000);
   const registry = await getTabRegistry();
   const entry = registry[source];
 
@@ -1802,7 +1852,9 @@ async function ensureAutoRunEmailReady(run, totalRuns) {
 
   let emailReady = false;
   const emailSource = getEmailSource(currentState);
-  const sourceLabel = emailSource === 'duck' ? 'Duck Mail' : 'iCloud Hide My Email';
+  const sourceLabel = emailSource === 'duck'
+    ? 'Duck Mail'
+    : (emailSource === 'spamok' ? 'SpamOK' : 'iCloud Hide My Email');
 
   try {
     const email = await fetchConfiguredEmail({ generateNew: true });
@@ -1815,7 +1867,9 @@ async function ensureAutoRunEmailReady(run, totalRuns) {
   if (!emailReady) {
     const pauseHint = emailSource === 'duck'
       ? 'Generate or paste a Duck Mail address, then continue'
-      : 'Generate or paste an iCloud alias, then continue';
+      : (emailSource === 'spamok'
+        ? 'Generate or paste a SpamOK address, then continue'
+        : 'Generate or paste an iCloud alias, then continue');
     await addLog(`=== Run ${run}/${totalRuns} PAUSED: ${pauseHint} ===`, 'warn');
     autoRunPausedPhase = 'waiting_email';
     await syncAutoRunState();
@@ -2105,6 +2159,22 @@ async function executeStep3(state) {
 // ============================================================
 
 function getMailConfig(state) {
+  if (getEmailSource(state) === 'spamok') {
+    const email = String(state.email || '').trim();
+    const localPart = email.split('@')[0]?.trim();
+    if (!email || !/@spamok\.com$/i.test(email) || !localPart) {
+      return { error: 'SpamOK email is empty or invalid. Use Auto to generate a SpamOK address first.' };
+    }
+    return {
+      source: 'spamok-mail',
+      url: `https://spamok.com/${encodeURIComponent(localPart)}`,
+      label: `SpamOK Mailbox (${localPart})`,
+      navigateOnReuse: true,
+      inject: ['content/utils.js', 'content/spamok-mail.js'],
+      injectSource: 'spamok-mail',
+    };
+  }
+
   const provider = state.mailProvider || 'qq';
   if (provider === '163') {
     return { source: 'mail-163', url: 'https://mail.163.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '163 Mail' };
@@ -2193,9 +2263,11 @@ async function pollVerificationCodeWithAutoResend(options) {
     successSelectors,
     successMessage,
     resendRounds = 3,
+    beforeResend = null,
   } = options;
 
   let currentFilterAfter = pollPayload.filterAfterTimestamp || 0;
+  const verificationResultTimeoutMs = 60000;
 
   for (let round = 1; round <= resendRounds; round++) {
     const currentPayload = {
@@ -2236,7 +2308,7 @@ async function pollVerificationCodeWithAutoResend(options) {
           /incorrect code/i,
           /invalid code/i,
         ],
-      });
+      }, verificationResultTimeoutMs);
 
       if (submissionResult?.invalidCode) {
         currentFilterAfter = Date.now();
@@ -2262,6 +2334,10 @@ async function pollVerificationCodeWithAutoResend(options) {
 
     if (round >= resendRounds) {
       throw new Error(pollError);
+    }
+
+    if (typeof beforeResend === 'function') {
+      await beforeResend({ step, round, resendRounds });
     }
 
     await addLog(`Step ${step}: No verification email received on round ${round}/${resendRounds}. Trying to resend code...`, 'warn');
@@ -2437,6 +2513,59 @@ async function refreshOAuthIfTimedOutBeforeStep6(state) {
   }
 }
 
+async function refreshOAuthIfTimedOutBeforeStep7Resend() {
+  const state = await getState();
+  if (!state.vpsUrl) {
+    return state;
+  }
+
+  await addLog('Step 7 resend: Checking CPA Auth status before requesting a new verification email...');
+
+  try {
+    const vpsTabId = await reuseOrCreateTab('vps-panel', state.vpsUrl, {
+      inject: ['content/utils.js', 'content/vps-panel.js'],
+      injectSource: 'vps-panel',
+    });
+
+    const response = await sendToTabWithRetry(vpsTabId, {
+      type: 'CHECK_OAUTH_TIMEOUT_STATUS',
+      source: 'background',
+    }, {
+      timeoutMs: 10000,
+      intervalMs: 300,
+    });
+
+    if (response?.error) {
+      throw new Error(response.error);
+    }
+
+    if (response?.oauthActive) {
+      await addLog('Step 7 resend: CPA Auth indicates the current OAuth link is still active.', 'ok');
+      return state;
+    }
+
+    if (!response?.timedOut) {
+      return state;
+    }
+
+    const timeoutText = response.statusText || '认证失败: Timeout waiting for OAuth callback';
+    await addLog(`Step 7 resend: CPA Auth reported OAuth timeout. Refreshing OAuth link... (${timeoutText})`, 'warn');
+
+    await executeStepAndWait(1, 1500);
+
+    const refreshedState = await getState();
+    if (!refreshedState.oauthUrl) {
+      throw new Error('Step 1 completed but no new OAuth URL was saved.');
+    }
+
+    await addLog('Step 7 resend: New OAuth link obtained after timeout.', 'ok');
+    return refreshedState;
+  } catch (err) {
+    await addLog(`Step 7 resend: CPA Auth timeout check could not be completed, continuing with current OAuth URL. ${getErrorMessage(err)}`, 'warn');
+    return state;
+  }
+}
+
 // ============================================================
 // Step 6: Login ChatGPT (Background opens tab, chatgpt.js handles login)
 // ============================================================
@@ -2524,6 +2653,9 @@ async function executeStep7(state) {
         'button[aria-label*="Continue"]',
       ],
       resendRounds: mailPollConfig.resendRounds,
+      beforeResend: async () => {
+        await refreshOAuthIfTimedOutBeforeStep7Resend();
+      },
     });
   } catch (err) {
     if (isMailLoginRequiredError(err)) {
