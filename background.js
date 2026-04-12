@@ -2226,10 +2226,28 @@ async function pollVerificationCodeWithAutoResend(options) {
         source: 'background',
         payload: { code: result.code },
       });
-      await waitForSignupSurface({
+      const submissionResult = await waitForSignupSurface({
         step,
         selectors: successSelectors,
+        errorPatterns: [
+          /代码不正确/i,
+          /验证码不正确/i,
+          /code is incorrect/i,
+          /incorrect code/i,
+          /invalid code/i,
+        ],
       });
+
+      if (submissionResult?.invalidCode) {
+        currentFilterAfter = Date.now();
+        await addLog(
+          `Step ${step}: Verification code was rejected by the page (${submissionResult.errorMessage || 'invalid code'}). Waiting for a fresh code...`,
+          'warn'
+        );
+        round -= 1;
+        continue;
+      }
+
       return;
     }
 

@@ -103,6 +103,7 @@ async function waitForSurfacePayload(payload = {}) {
   const {
     step = 'surface',
     selectors = [],
+    errorPatterns = [],
     timeout = 15000,
     minReadyState = 'interactive',
   } = payload;
@@ -112,18 +113,61 @@ async function waitForSurfacePayload(payload = {}) {
     return { readyState: document.readyState, url: location.href };
   }
 
-  const found = await waitForAnySelector(selectors, timeout);
-  if (!found) {
-    throw new Error(`Step ${step}: Expected next page surface not found within ${timeout}ms. URL: ${location.href}`);
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+
+    const found = await waitForAnySelector(selectors, 400);
+    if (found) {
+      log(`Step ${step}: Surface confirmed by ${found.selector} at readyState ${document.readyState}`);
+      return {
+        selector: found.selector,
+        readyState: document.readyState,
+        url: location.href,
+        minReadyState,
+      };
+    }
+
+    const matchedError = findVerificationErrorMessage(errorPatterns);
+    if (matchedError) {
+      log(`Step ${step}: Verification error detected: ${matchedError}`, 'warn');
+      return {
+        invalidCode: true,
+        errorMessage: matchedError,
+        readyState: document.readyState,
+        url: location.href,
+        minReadyState,
+      };
+    }
   }
 
-  log(`Step ${step}: Surface confirmed by ${found.selector} at readyState ${document.readyState}`);
-  return {
-    selector: found.selector,
-    readyState: document.readyState,
-    url: location.href,
-    minReadyState,
-  };
+  throw new Error(`Step ${step}: Expected next page surface not found within ${timeout}ms. URL: ${location.href}`);
+}
+
+function findVerificationErrorMessage(errorPatterns = []) {
+  if (!Array.isArray(errorPatterns) || errorPatterns.length === 0) return '';
+
+  const candidates = Array.from(document.querySelectorAll([
+    '[slot="errorMessage"]',
+    '.react-aria-FieldError',
+    'li._error_18qcl_110',
+    '[aria-live="polite"]',
+    '[role="alert"]',
+  ].join(', ')));
+
+  for (const node of candidates) {
+    const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+
+    for (const pattern of errorPatterns) {
+      const regex = pattern instanceof RegExp ? pattern : new RegExp(String(pattern), 'i');
+      if (regex.test(text)) {
+        return text;
+      }
+    }
+  }
+
+  return '';
 }
 
 // ============================================================
