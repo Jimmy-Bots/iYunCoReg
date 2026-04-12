@@ -6,7 +6,7 @@ A Chrome extension built around `iCloud Hide My Email` for small-scale personal 
 
 Its job is straightforward:
 
-- Automatically fetch the OAuth link from the `CPA Auth` panel
+- Automatically fetch the OAuth link from the `CPA Auth / Sub2API` panel
 - Automatically complete sign-up, mailbox polling, login, and consent confirmation
 - Prefer reusing unused iCloud aliases
 - Support both step-by-step execution and full `Auto` runs
@@ -16,7 +16,7 @@ Its job is straightforward:
 If you already have:
 
 - Chrome
-- A working `CPA Auth` management panel
+- A working `CPA Auth` or `Sub2API` management panel
 - An active iCloud session in the current browser
 - At least one mailbox page that can receive verification codes
 
@@ -24,7 +24,7 @@ then this extension should work out of the box for you.
 
 ## Feature Overview
 
-- Automatically read the OpenAI OAuth link from the `CPA Auth` panel
+- Automatically read the OpenAI OAuth link from the `CPA Auth` or `Sub2API` panel
 - Automatically open the sign-up page and enter `Sign up / Register`
 - Automatically fill email, password, name, birthday, or age
 - Automatically poll verification emails and fill the code back in
@@ -46,7 +46,7 @@ Please make sure:
 
 - Chrome extension developer mode is enabled
 - You are already signed in to `icloud.com.cn` or `icloud.com` in the current browser
-- Your `CPA Auth` panel is reachable
+- Your `CPA Auth` or `Sub2API` panel is reachable
 - Your verification mailbox web page is accessible
 
 Supported verification sources:
@@ -96,7 +96,7 @@ Not recommended or supported for:
 
 For your first run, the recommended order is:
 
-1. Fill in `CPA Auth` in the side panel
+1. Fill in the `Auth Panel` URL in the side panel
 2. Choose the verification source in `Verify`
 3. Click `Auto` to generate or reuse an iCloud email, or paste one manually
 4. Leave `Password` empty to auto-generate, or provide your own
@@ -105,18 +105,26 @@ For your first run, the recommended order is:
 
 ## Side Panel Guide
 
-### `CPA Auth`
+### `Auth Panel`
 
 Fill in your management panel URL, for example:
 
 ```txt
-http(s)://<your-host>/management.html#/oauth
+CPA Auth: http(s)://<your-host>/management.html#/oauth
+Sub2API: https://<your-host>/admin/accounts
 ```
 
 This URL is mainly used for:
 
 - Step 1: getting the OAuth link
 - Step 9: writing back the callback URL and verifying it
+
+Additional notes:
+
+- If the URL is a `CPA Auth` panel, the extension uses the original OAuth-fetch and callback verification flow
+- If the URL is a `Sub2API /admin/accounts` page, the extension detects it automatically and switches to the `Sub2API` flow
+- Under `Sub2API`, Step 1 will automatically create the account, select `OpenAI`, and generate the authorization link
+- Under `Sub2API`, Step 9 will automatically fill the callback URL into the `Authorization Link or Code` field and click `Complete Authorization`
 
 ### `Language`
 
@@ -183,7 +191,7 @@ There are 9 steps in the side panel:
 6. `Login via OAuth`
 7. `Get Login Code`
 8. `OAuth Auto Confirm`
-9. `CPA Auth Verify`
+9. `Auth Panel Verify`
 
 Best for:
 
@@ -197,7 +205,7 @@ Best for:
 
 Default flow:
 
-1. Get the `CPA Auth` OAuth link
+1. Get the `CPA Auth / Sub2API` OAuth link
 2. Open the sign-up page
 3. Fetch an email automatically
 4. Receive the sign-up code
@@ -205,7 +213,7 @@ Default flow:
 6. Log in
 7. Receive the login code
 8. Confirm OAuth automatically
-9. Return to `CPA Auth` and finish verification
+9. Return to the `Auth Panel` and finish verification
 
 If the auto flow is interrupted:
 

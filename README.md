@@ -6,7 +6,7 @@
 
 它的定位很简单：
 
-- 自动获取 `CPA Auth` 面板里的 OAuth 链接
+- 自动获取 `CPA Auth / Sub2API` 面板里的 OAuth 链接
 - 自动完成注册、收码、登录、授权确认
 - 优先复用未使用的 iCloud 别名
 - 支持单步执行，也支持整套 `Auto`
@@ -16,7 +16,7 @@
 如果你已经有：
 
 - Chrome 浏览器
-- 一个可用的 `CPA Auth` 管理面板
+- 一个可用的 `CPA Auth` 或 `Sub2API` 管理面板
 - 当前浏览器里的 iCloud 登录态
 - 至少一种可读验证码的邮箱页面
 
@@ -24,7 +24,7 @@
 
 ## 功能概览
 
-- 自动读取 `CPA Auth` 面板中的 OpenAI OAuth 链接
+- 自动读取 `CPA Auth` 或 `Sub2API` 面板中的 OpenAI OAuth 链接
 - 自动打开注册页并进入 `Sign up / Register`
 - 自动填写邮箱、密码、姓名、生日 / 年龄
 - 自动轮询验证码并回填
@@ -46,7 +46,7 @@
 
 - 已开启 Chrome 扩展开发者模式
 - 已在当前浏览器登录 `icloud.com.cn` 或 `icloud.com`
-- `CPA Auth` 面板可以正常打开
+- `CPA Auth` 或 `Sub2API` 面板可以正常打开
 - 你的验证码邮箱网页可以正常访问
 
 支持的验证码来源：
@@ -96,7 +96,7 @@
 
 第一次使用，建议按下面顺序操作：
 
-1. 在侧边栏填好 `CPA Auth`
+1. 在侧边栏填好 `Auth 面板`
 2. 选择验证码来源 `Verify`
 3. 点击 `Auto` 生成 / 复用 iCloud 邮箱，或者手动粘贴邮箱
 4. 留空 `Password` 让插件自动生成，或手动指定密码
@@ -105,18 +105,26 @@
 
 ## 侧边栏说明
 
-### `CPA Auth`
+### `Auth 面板`
 
 填写你的管理面板地址，例如：
 
 ```txt
-http(s)://<your-host>/management.html#/oauth
+CPA Auth: http(s)://<your-host>/management.html#/oauth
+Sub2API: https://<your-host>/admin/accounts
 ```
 
 这个地址主要用于：
 
 - Step 1 获取 OAuth 链接
 - Step 9 回填 callback 并验证
+
+补充说明：
+
+- 如果填写的是 `CPA Auth` 地址，插件会沿用原来的 OAuth 获取和 callback 回填逻辑
+- 如果填写的是 `Sub2API /admin/accounts` 地址，插件会自动识别并切换到 `Sub2API` 流程
+- `Sub2API` 下，Step 1 会自动创建账号、选择 `OpenAI`、生成授权链接
+- `Sub2API` 下，Step 9 会自动把回调链接填到“授权链接或 Code”输入框，再点击“完成授权”
 
 ### `Language`
 
@@ -183,7 +191,7 @@ http(s)://<your-host>/management.html#/oauth
 6. `Login via OAuth`
 7. `Get Login Code`
 8. `OAuth Auto Confirm`
-9. `CPA Auth Verify`
+9. `Auth Panel Verify`
 
 适合：
 
@@ -197,7 +205,7 @@ http(s)://<your-host>/management.html#/oauth
 
 默认过程：
 
-1. 获取 `CPA Auth` OAuth 链接
+1. 获取 `CPA Auth / Sub2API` OAuth 链接
 2. 打开注册页
 3. 自动取邮箱
 4. 收注册验证码
@@ -205,7 +213,7 @@ http(s)://<your-host>/management.html#/oauth
 6. 登录
 7. 收登录验证码
 8. 自动确认 OAuth
-9. 回到 `CPA Auth` 验证成功
+9. 回到 `Auth 面板` 验证成功
 
 如果自动流程中断：
 
