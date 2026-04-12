@@ -57,8 +57,10 @@ const DEFAULT_STATE = {
   mailPollMaxAttempts: 20,
   mailPollIntervalMs: 3000,
   mailResendRounds: 3,
+  spamokWaitNewAttempts: 2,
   inbucketHost: '',
   inbucketMailbox: '',
+  lastSignupVerificationCode: '',
 };
 
 async function getState() {
@@ -898,6 +900,7 @@ async function resetState() {
       'mailPollMaxAttempts',
       'mailPollIntervalMs',
       'mailResendRounds',
+      'spamokWaitNewAttempts',
       'inbucketHost',
       'inbucketMailbox',
     ]),
@@ -928,6 +931,9 @@ async function resetState() {
     mailPollMaxAttempts: Number(prev.mailPollMaxAttempts) || 20,
     mailPollIntervalMs: Number(prev.mailPollIntervalMs) || 3000,
     mailResendRounds: Number(prev.mailResendRounds) || 3,
+    spamokWaitNewAttempts: Number.isFinite(Number(prev.spamokWaitNewAttempts))
+      ? Math.min(120, Math.max(0, Number(prev.spamokWaitNewAttempts)))
+      : DEFAULT_STATE.spamokWaitNewAttempts,
     inbucketHost: prev.inbucketHost || '',
     inbucketMailbox: prev.inbucketMailbox || '',
   });
@@ -1512,6 +1518,12 @@ async function handleMessage(message, sender) {
       if (message.payload.mailPollMaxAttempts !== undefined) updates.mailPollMaxAttempts = Number(message.payload.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts;
       if (message.payload.mailPollIntervalMs !== undefined) updates.mailPollIntervalMs = Number(message.payload.mailPollIntervalMs) || DEFAULT_STATE.mailPollIntervalMs;
       if (message.payload.mailResendRounds !== undefined) updates.mailResendRounds = Number(message.payload.mailResendRounds) || DEFAULT_STATE.mailResendRounds;
+      if (message.payload.spamokWaitNewAttempts !== undefined) {
+        const rawSpamokWaitNewAttempts = Number(message.payload.spamokWaitNewAttempts);
+        updates.spamokWaitNewAttempts = Number.isFinite(rawSpamokWaitNewAttempts)
+          ? Math.min(120, Math.max(0, rawSpamokWaitNewAttempts))
+          : DEFAULT_STATE.spamokWaitNewAttempts;
+      }
       if (message.payload.inbucketHost !== undefined) updates.inbucketHost = message.payload.inbucketHost;
       if (message.payload.inbucketMailbox !== undefined) updates.inbucketMailbox = message.payload.inbucketMailbox;
       await setState(updates);
@@ -2221,7 +2233,11 @@ function getMailPollConfig(state) {
   const maxAttempts = Math.min(120, Math.max(1, Number(state?.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts));
   const intervalMs = Math.min(30000, Math.max(1000, Number(state?.mailPollIntervalMs) || DEFAULT_STATE.mailPollIntervalMs));
   const resendRounds = Math.min(10, Math.max(1, Number(state?.mailResendRounds) || DEFAULT_STATE.mailResendRounds));
-  return { maxAttempts, intervalMs, resendRounds };
+  const rawSpamokWaitNewAttempts = Number(state?.spamokWaitNewAttempts);
+  const spamokWaitNewAttempts = Number.isFinite(rawSpamokWaitNewAttempts)
+    ? Math.min(120, Math.max(0, rawSpamokWaitNewAttempts))
+    : DEFAULT_STATE.spamokWaitNewAttempts;
+  return { maxAttempts, intervalMs, resendRounds, spamokWaitNewAttempts };
 }
 
 function supportsMailLoginPrompt(mail) {
@@ -2283,6 +2299,16 @@ async function pollVerificationCodeWithAutoResend(options) {
     });
 
     if (result?.code) {
+      const latestState = await getState();
+      if (step === 7 && latestState.lastSignupVerificationCode && result.code === latestState.lastSignupVerificationCode) {
+        currentFilterAfter = Math.max(currentFilterAfter, result.emailTimestamp || Date.now());
+        await addLog(
+          `Step 7: Ignoring code ${result.code} because it matches the signup verification code from step 4. Waiting for a fresh login code...`,
+          'warn'
+        );
+        continue;
+      }
+
       await setState({ lastEmailTimestamp: result.emailTimestamp || Date.now() });
       await addLog(`Step ${step}: ${successMessage}: ${result.code}`);
 
@@ -2318,6 +2344,10 @@ async function pollVerificationCodeWithAutoResend(options) {
         );
         round -= 1;
         continue;
+      }
+
+      if (step === 4) {
+        await setState({ lastSignupVerificationCode: result.code });
       }
 
       return;
@@ -2377,6 +2407,7 @@ async function executeStep4(state) {
     targetEmail: state.email,
     maxAttempts: mailPollConfig.maxAttempts,
     intervalMs: mailPollConfig.intervalMs,
+    waitNewAttempts: mailPollConfig.spamokWaitNewAttempts,
   };
 
   const mail = getMailConfig(state);
@@ -2617,6 +2648,7 @@ async function executeStep7(state) {
     targetEmail: state.email,
     maxAttempts: mailPollConfig.maxAttempts,
     intervalMs: mailPollConfig.intervalMs,
+    waitNewAttempts: mailPollConfig.spamokWaitNewAttempts,
   };
 
   const mail = getMailConfig(state);

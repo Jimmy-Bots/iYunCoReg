@@ -170,7 +170,11 @@ async function handlePollEmail(step, payload) {
     maxAttempts = 20,
     intervalMs = 3000,
     targetEmail = '',
+    waitNewAttempts = 2,
   } = payload || {};
+  const normalizedWaitNewAttempts = Number.isFinite(Number(waitNewAttempts))
+    ? Math.min(120, Math.max(0, Number(waitNewAttempts)))
+    : 2;
 
   log(`Step ${step}: Starting email poll on SpamOK mailbox page (max ${maxAttempts} attempts)`);
 
@@ -184,12 +188,11 @@ async function handlePollEmail(step, payload) {
   const initialLiveRows = parseSpamokRows(document);
   const existingMailIds = new Set(initialLiveRows.map(mail => mail.mailId));
   log(`Step ${step}: Snapshotted ${existingMailIds.size} existing SpamOK emails from live page DOM`);
-
-  const WAIT_FOR_NEW_ATTEMPTS = 2;
+  log(`Step ${step}: SpamOK will wait ${normalizedWaitNewAttempts} attempt(s) for new mail before falling back to existing rows`);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log(`Polling SpamOK mailbox... attempt ${attempt}/${maxAttempts}`);
-    const allowExisting = attempt > WAIT_FOR_NEW_ATTEMPTS;
+    const allowExisting = attempt > normalizedWaitNewAttempts;
 
     const liveRows = parseSpamokRows(document);
     if (liveRows.length > 0) {
@@ -229,7 +232,7 @@ async function handlePollEmail(step, payload) {
       log(`Step ${step}: SpamOK HTML fetch fallback failed: ${err.message}`, 'warn');
     }
 
-    if (attempt === WAIT_FOR_NEW_ATTEMPTS) {
+    if (normalizedWaitNewAttempts > 0 && attempt === normalizedWaitNewAttempts) {
       log(`Step ${step}: No new SpamOK emails yet, falling back to existing mailbox rows on the next attempt`, 'warn');
     }
 
