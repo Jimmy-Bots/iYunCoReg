@@ -136,11 +136,65 @@ function getCurrentMailboxIds() {
 }
 
 async function refreshMailbox() {
-  const refreshButton = document.querySelector('button[alt="Refresh Mailbox"]');
-  if (!refreshButton) return;
+  const refreshButton = findRefreshButton();
+  if (!refreshButton) {
+    log('Inbucket: Refresh button not found, skipping manual refresh', 'warn');
+    return false;
+  }
+
+  const label = [
+    refreshButton.getAttribute('aria-label'),
+    refreshButton.getAttribute('title'),
+    refreshButton.getAttribute('alt'),
+    refreshButton.textContent,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
 
   simulateClick(refreshButton);
-  await sleep(800);
+  log(`Inbucket: Triggered mailbox refresh via "${label || 'refresh button'}"`);
+  await sleep(1200);
+  return true;
+}
+
+function findRefreshButton() {
+  const directSelector = [
+    'button[alt="Refresh Mailbox"]',
+    'button[aria-label*="Refresh" i]',
+    'button[title*="Refresh" i]',
+    'button[aria-label*="Mailbox" i]',
+    'button[title*="Mailbox" i]',
+    'button:has(i.fa-sync)',
+    'button:has(i.fa-sync-alt)',
+    'button:has(i.fa-redo)',
+    'button:has(i.fa-rotate-right)',
+  ].join(', ');
+
+  const directMatch = document.querySelector(directSelector);
+  if (directMatch) return directMatch;
+
+  const iconMatch = Array.from(document.querySelectorAll('button')).find((button) => button.querySelector(
+    'i.fa-sync, i.fa-sync-alt, i.fa-redo, i.fa-rotate-right'
+  ));
+  if (iconMatch) return iconMatch;
+
+  const textMatch = Array.from(document.querySelectorAll('button, [role="button"]')).find((button) => {
+    const text = normalizeText(
+      [
+        button.textContent,
+        button.getAttribute('aria-label'),
+        button.getAttribute('title'),
+        button.getAttribute('alt'),
+      ]
+        .filter(Boolean)
+        .join(' ')
+    );
+
+    return /refresh|reload|刷新/.test(text) && /mail|mailbox|message|收件/i.test(text);
+  });
+
+  return textMatch || null;
 }
 
 async function openMailboxEntry(entry) {
@@ -191,7 +245,10 @@ async function handleMailboxPollEmail(step, payload) {
     log(`Polling Inbucket mailbox... attempt ${attempt}/${maxAttempts}`);
 
     if (attempt > 1) {
-      await refreshMailbox();
+      const refreshed = await refreshMailbox();
+      if (!refreshed) {
+        log(`Step ${step}: Mailbox refresh button was not found on attempt ${attempt}`, 'warn');
+      }
     }
 
     const entries = Array.from(findMailboxEntries()).map(parseMailboxEntry);

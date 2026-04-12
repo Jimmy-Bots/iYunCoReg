@@ -925,6 +925,13 @@ async function registerTab(source, tabId) {
   console.log(LOG_PREFIX, `Tab registered: ${source} -> ${tabId}`);
 }
 
+async function registerPendingTab(source, tabId) {
+  const registry = await getTabRegistry();
+  registry[source] = { tabId, ready: false };
+  await setState({ tabRegistry: registry });
+  console.log(LOG_PREFIX, `Tab pending: ${source} -> ${tabId}`);
+}
+
 async function isTabAlive(source) {
   const registry = await getTabRegistry();
   const entry = registry[source];
@@ -1020,8 +1027,7 @@ async function reuseOrCreateTab(source, url, options = {}) {
 
       // For dynamically injected pages like the CPA Auth panel, re-inject immediately.
       if (options.inject) {
-        if (registry[source]) registry[source].ready = false;
-        await setState({ tabRegistry: registry });
+        await registerPendingTab(source, tabId);
         if (options.injectSource) {
           await chrome.scripting.executeScript({
             target: { tabId },
@@ -1042,8 +1048,12 @@ async function reuseOrCreateTab(source, url, options = {}) {
     }
 
     // Mark as not ready BEFORE navigating — so READY signal from new page is captured correctly
-    if (registry[source]) registry[source].ready = false;
-    await setState({ tabRegistry: registry });
+    if (options.inject) {
+      await registerPendingTab(source, tabId);
+    } else if (registry[source]) {
+      registry[source].ready = false;
+      await setState({ tabRegistry: registry });
+    }
 
     // Navigate existing tab to new URL
     await chrome.tabs.update(tabId, { url, active: true });
@@ -1088,6 +1098,9 @@ async function reuseOrCreateTab(source, url, options = {}) {
   // Create new tab
   const tab = await chrome.tabs.create({ url, active: true });
   console.log(LOG_PREFIX, `Created new tab ${source} (${tab.id})`);
+  if (options.inject) {
+    await registerPendingTab(source, tab.id);
+  }
 
   // If dynamic injection needed (CPA Auth panel), inject scripts after load
   if (options.inject) {
@@ -1124,13 +1137,26 @@ async function reuseOrCreateTab(source, url, options = {}) {
 // Send command to content script (with readiness check)
 // ============================================================
 
-async function sendToContentScript(source, message) {
+async function sendToContentScript(source, message, options = {}) {
+  const readyTimeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? options.timeoutMs
+    : (source === 'inbucket-mail' ? 60000 : 15000);
   const registry = await getTabRegistry();
   const entry = registry[source];
 
   if (!entry || !entry.ready) {
+    if (entry?.tabId) {
+      const alive = await isTabAlive(source);
+      if (alive) {
+        console.log(LOG_PREFIX, `${source} not marked ready yet, retrying direct send to tab ${entry.tabId}`);
+        return sendToTabWithRetry(entry.tabId, message, {
+          timeoutMs: readyTimeoutMs,
+          intervalMs: 300,
+        });
+      }
+    }
     console.log(LOG_PREFIX, `${source} not ready, queuing command`);
-    return queueCommand(source, message);
+    return queueCommand(source, message, readyTimeoutMs);
   }
 
   // Verify tab is still alive
@@ -1138,7 +1164,7 @@ async function sendToContentScript(source, message) {
   if (!alive) {
     // Tab was closed — queue the command, it will be sent when tab is reopened
     console.log(LOG_PREFIX, `${source} tab was closed, queuing command`);
-    return queueCommand(source, message);
+    return queueCommand(source, message, readyTimeoutMs);
   }
 
   console.log(LOG_PREFIX, `Sending to ${source} (tab ${entry.tabId}):`, message.type);
@@ -1542,14 +1568,25 @@ let resumeWaiter = null;
 function waitForStepComplete(step, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     throwIfStopped();
-    const timer = setTimeout(() => {
-      stepWaiters.delete(step);
-      reject(new Error(`Step ${step} timed out after ${timeoutMs / 1000}s`));
-    }, timeoutMs);
+    const useTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0;
+    const timer = useTimeout
+      ? setTimeout(() => {
+        stepWaiters.delete(step);
+        reject(new Error(`Step ${step} timed out after ${timeoutMs / 1000}s`));
+      }, timeoutMs)
+      : null;
 
     stepWaiters.set(step, {
-      resolve: (data) => { clearTimeout(timer); stepWaiters.delete(step); resolve(data); },
-      reject: (err) => { clearTimeout(timer); stepWaiters.delete(step); reject(err); },
+      resolve: (data) => {
+        if (timer) clearTimeout(timer);
+        stepWaiters.delete(step);
+        resolve(data);
+      },
+      reject: (err) => {
+        if (timer) clearTimeout(timer);
+        stepWaiters.delete(step);
+        reject(err);
+      },
     });
   });
 }
@@ -1659,7 +1696,8 @@ async function executeStep(step) {
  */
 async function executeStepAndWait(step, delayAfter = 2000) {
   throwIfStopped();
-  const promise = waitForStepComplete(step, 120000);
+  const timeoutMs = step === 4 ? null : 120000;
+  const promise = waitForStepComplete(step, timeoutMs);
   await executeStep(step);
   await promise;
   // Extra delay for page transitions / DOM updates
