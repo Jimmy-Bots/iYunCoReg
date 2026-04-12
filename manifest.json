@@ -69,6 +69,13 @@
       ],
       "js": ["content/utils.js", "content/gmail-mail.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://duckduckgo.com/email/settings/autofill*"
+      ],
+      "js": ["content/utils.js", "content/duck-mail.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

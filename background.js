@@ -3,6 +3,7 @@
 importScripts('data/names.js');
 
 const LOG_PREFIX = '[MultiPage:bg]';
+const DUCK_AUTOFILL_URL = 'https://duckduckgo.com/email/settings/autofill';
 const ICLOUD_SETUP_URLS = [
   'https://setup.icloud.com.cn/setup/ws/1',
   'https://setup.icloud.com/setup/ws/1',
@@ -36,6 +37,7 @@ const DEFAULT_STATE = {
   language: 'zh-CN',
   oauthUrl: null,
   autoDeleteUsedIcloudAlias: false,
+  emailSource: 'icloud',
   email: null,
   password: null,
   accounts: [], // Successfully completed accounts: { email, password, createdAt }
@@ -789,8 +791,40 @@ async function fetchIcloudHideMyEmail() {
 }
 
 async function fetchConfiguredEmail(options = {}) {
-  void options;
-  return fetchIcloudHideMyEmail();
+  const state = await getState();
+  const emailSource = getEmailSource(state);
+  return emailSource === 'duck'
+    ? fetchDuckEmail(options)
+    : fetchIcloudHideMyEmail();
+}
+
+function getEmailSource(state) {
+  return state?.emailSource === 'duck' ? 'duck' : 'icloud';
+}
+
+async function fetchDuckEmail(options = {}) {
+  throwIfStopped();
+  const { generateNew = true } = options;
+
+  await addLog(`Duck Mail: Opening autofill settings (${generateNew ? 'generate new' : 'reuse current'})...`);
+  await reuseOrCreateTab('duck-mail', DUCK_AUTOFILL_URL);
+
+  const result = await sendToContentScript('duck-mail', {
+    type: 'FETCH_DUCK_EMAIL',
+    source: 'background',
+    payload: { generateNew },
+  });
+
+  if (result?.error) {
+    throw new Error(result.error);
+  }
+  if (!result?.email) {
+    throw new Error('Duck email not returned.');
+  }
+
+  await setEmailState(result.email);
+  await addLog(`Duck Mail: ${result.generated ? 'Generated' : 'Loaded'} ${result.email}`, 'ok');
+  return result.email;
 }
 
 async function resetState() {
@@ -805,6 +839,7 @@ async function resetState() {
       'vpsUrl',
       'autoDeleteUsedIcloudAlias',
       'customPassword',
+      'emailSource',
       'icloudHostPreference',
       'preferredIcloudHost',
       'mailProvider',
@@ -833,6 +868,7 @@ async function resetState() {
     vpsUrl: prev.vpsUrl || '',
     autoDeleteUsedIcloudAlias: Boolean(prev.autoDeleteUsedIcloudAlias),
     customPassword: prev.customPassword || '',
+    emailSource: getEmailSource(prev),
     icloudHostPreference: prev.icloudHostPreference || 'auto',
     preferredIcloudHost: prev.preferredIcloudHost || '',
     mailProvider: prev.mailProvider || '163',
@@ -1390,6 +1426,7 @@ async function handleMessage(message, sender) {
       if (message.payload.vpsUrl !== undefined) updates.vpsUrl = message.payload.vpsUrl;
       if (message.payload.autoDeleteUsedIcloudAlias !== undefined) updates.autoDeleteUsedIcloudAlias = Boolean(message.payload.autoDeleteUsedIcloudAlias);
       if (message.payload.customPassword !== undefined) updates.customPassword = message.payload.customPassword;
+      if (message.payload.emailSource !== undefined) updates.emailSource = getEmailSource(message.payload);
       if (message.payload.icloudHostPreference !== undefined) updates.icloudHostPreference = message.payload.icloudHostPreference;
       if (message.payload.mailProvider !== undefined) updates.mailProvider = message.payload.mailProvider;
       if (message.payload.mailPollMaxAttempts !== undefined) updates.mailPollMaxAttempts = Number(message.payload.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts;
@@ -1722,17 +1759,21 @@ async function ensureAutoRunEmailReady(run, totalRuns) {
   if (currentState.email) return;
 
   let emailReady = false;
+  const emailSource = getEmailSource(currentState);
+  const sourceLabel = emailSource === 'duck' ? 'Duck Mail' : 'iCloud Hide My Email';
 
   try {
     const email = await fetchConfiguredEmail({ generateNew: true });
-    await addLog(`=== Run ${run}/${totalRuns} — iCloud Hide My Email ready: ${email} ===`, 'ok');
+    await addLog(`=== Run ${run}/${totalRuns} — ${sourceLabel} ready: ${email} ===`, 'ok');
     emailReady = true;
   } catch (err) {
     await addLog(`Auto email fetch failed: ${err.message}`, 'warn');
   }
 
   if (!emailReady) {
-    const pauseHint = 'Generate or paste an iCloud alias, then continue';
+    const pauseHint = emailSource === 'duck'
+      ? 'Generate or paste a Duck Mail address, then continue'
+      : 'Generate or paste an iCloud alias, then continue';
     await addLog(`=== Run ${run}/${totalRuns} PAUSED: ${pauseHint} ===`, 'warn');
     autoRunPausedPhase = 'waiting_email';
     await syncAutoRunState();

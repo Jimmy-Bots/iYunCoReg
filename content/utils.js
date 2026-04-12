@@ -7,6 +7,7 @@ const SCRIPT_SOURCE = (() => {
   if (url.includes('mail.qq.com')) return 'qq-mail';
   if (url.includes('mail.163.com')) return 'mail-163';
   if (url.includes('mail.google.com')) return 'gmail-mail';
+  if (url.includes('duckduckgo.com/email/settings/autofill')) return 'duck-mail';
   if (url.includes('chatgpt.com')) return 'chatgpt';
   // VPS panel — detected dynamically since URL is configurable
   return 'vps-panel';

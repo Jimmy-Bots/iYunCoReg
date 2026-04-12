@@ -33,6 +33,7 @@ const btnIcloudBulkUnused = document.getElementById('btn-icloud-bulk-unused');
 const btnIcloudBulkPreserve = document.getElementById('btn-icloud-bulk-preserve');
 const btnIcloudBulkUnpreserve = document.getElementById('btn-icloud-bulk-unpreserve');
 const btnIcloudBulkDelete = document.getElementById('btn-icloud-bulk-delete');
+const selectEmailSource = document.getElementById('select-email-source');
 const rowMailProvider = document.getElementById('row-mail-provider');
 const inputEmail = document.getElementById('input-email');
 const inputPassword = document.getElementById('input-password');
@@ -93,7 +94,7 @@ const I18N = {
   'zh-CN': {
     titleRunCount: '运行次数',
     titleAutoRun: '自动执行全部步骤',
-    titleFetchEmail: '自动获取 iCloud 别名',
+    titleFetchEmail: '自动获取{source}',
     titleStop: '停止当前流程',
     titleReset: '重置全部步骤',
     titleTheme: '切换主题',
@@ -101,6 +102,7 @@ const I18N = {
     titleClearLog: '清空日志',
     labelCpaAuth: 'CPA Auth',
     labelLanguage: '语言',
+    labelSource: '来源',
     labelAlias: '别名',
     labelCleanup: '清理',
     labelIcloudHost: 'iCloud',
@@ -114,6 +116,8 @@ const I18N = {
     labelOauth: 'OAuth',
     labelCallback: '回调',
     icloudAliasName: 'iCloud Hide My Email',
+    emailSourceIcloud: 'iCloud Hide My Email',
+    emailSourceDuck: 'Duck Mail',
     icloudHostAuto: '自动',
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
@@ -130,6 +134,8 @@ const I18N = {
     placeholderMailResendRounds: '重发轮数，例如 3',
     placeholderIcloudSearch: '搜索邮箱 / 标签 / 备注',
     placeholderEmail: '使用 Auto 生成 iCloud 别名，或手动粘贴',
+    placeholderEmailIcloud: '使用 Auto 生成 iCloud 别名，或手动粘贴',
+    placeholderEmailDuck: '使用 Auto 获取 Duck 邮箱，或手动粘贴',
     placeholderPassword: '留空则自动生成',
     waiting: '等待中...',
     btnConfirm: '确定',
@@ -175,6 +181,8 @@ const I18N = {
     statusDone: ({ step }) => `第 ${step} 步完成`,
     statusReady: '就绪',
     autoHintEmail: '使用 Auto 生成 iCloud 别名，或手动粘贴后继续',
+    autoHintEmailIcloud: '使用 Auto 生成 iCloud 别名，或手动粘贴后继续',
+    autoHintEmailDuck: '使用 Auto 获取 Duck 邮箱，或手动粘贴后继续',
     autoHintError: '自动运行被错误中断。修复问题或跳过失败步骤后继续',
     fetchedEmail: ({ email }) => `已获取 ${email}`,
     autoFetchFailed: ({ message }) => `自动获取失败：${message}`,
@@ -244,7 +252,7 @@ const I18N = {
   'en-US': {
     titleRunCount: 'Number of runs',
     titleAutoRun: 'Run all steps automatically',
-    titleFetchEmail: 'Fetch an iCloud alias automatically',
+    titleFetchEmail: 'Fetch {source} automatically',
     titleStop: 'Stop current flow',
     titleReset: 'Reset all steps',
     titleTheme: 'Toggle theme',
@@ -252,6 +260,7 @@ const I18N = {
     titleClearLog: 'Clear log',
     labelCpaAuth: 'CPA Auth',
     labelLanguage: 'Language',
+    labelSource: 'Source',
     labelAlias: 'Alias',
     labelCleanup: 'Cleanup',
     labelIcloudHost: 'iCloud',
@@ -265,6 +274,8 @@ const I18N = {
     labelOauth: 'OAuth',
     labelCallback: 'Callback',
     icloudAliasName: 'iCloud Hide My Email',
+    emailSourceIcloud: 'iCloud Hide My Email',
+    emailSourceDuck: 'Duck Mail',
     icloudHostAuto: 'Auto',
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
@@ -281,6 +292,8 @@ const I18N = {
     placeholderMailResendRounds: 'Resend rounds, e.g. 3',
     placeholderIcloudSearch: 'Search alias / label / note',
     placeholderEmail: 'Use Auto to generate an iCloud alias, or paste manually',
+    placeholderEmailIcloud: 'Use Auto to generate an iCloud alias, or paste manually',
+    placeholderEmailDuck: 'Use Auto to fetch a Duck Mail address, or paste manually',
     placeholderPassword: 'Leave blank to auto-generate',
     waiting: 'Waiting...',
     btnConfirm: 'OK',
@@ -326,6 +339,8 @@ const I18N = {
     statusDone: ({ step }) => `Step ${step} done`,
     statusReady: 'Ready',
     autoHintEmail: 'Use Auto to generate an iCloud alias, or paste manually, then continue',
+    autoHintEmailIcloud: 'Use Auto to generate an iCloud alias, or paste manually, then continue',
+    autoHintEmailDuck: 'Use Auto to fetch a Duck Mail address, or paste manually, then continue',
     autoHintError: 'Auto run was interrupted by an error. Fix it or skip the failed step, then continue',
     fetchedEmail: ({ email }) => `Fetched ${email}`,
     autoFetchFailed: ({ message }) => `Auto fetch failed: ${message}`,
@@ -415,6 +430,28 @@ function getCopyLabel(kind) {
   if (kind === 'email') return 'email';
   if (kind === 'password') return 'password';
   return 'value';
+}
+
+function getSelectedEmailSource() {
+  return selectEmailSource?.value === 'duck' ? 'duck' : 'icloud';
+}
+
+function getSelectedEmailSourceLabel() {
+  return getSelectedEmailSource() === 'duck'
+    ? t('emailSourceDuck')
+    : t('emailSourceIcloud');
+}
+
+function getEmailPlaceholderText() {
+  return getSelectedEmailSource() === 'duck'
+    ? t('placeholderEmailDuck')
+    : t('placeholderEmailIcloud');
+}
+
+function getAutoHintEmailText() {
+  return getSelectedEmailSource() === 'duck'
+    ? t('autoHintEmailDuck')
+    : t('autoHintEmailIcloud');
 }
 
 function applyLanguage(language) {
@@ -558,6 +595,9 @@ async function restoreState() {
     if (state.language) {
       selectLanguage.value = state.language;
     }
+    if (state.emailSource) {
+      selectEmailSource.value = state.emailSource;
+    }
     selectIcloudHostPreference.value = state.icloudHostPreference || 'auto';
     if (state.mailProvider) {
       selectMailProvider.value = state.mailProvider;
@@ -591,7 +631,7 @@ async function restoreState() {
 
     if (state.autoRunPausedPhase === 'waiting_email') {
       autoContinueBar.dataset.reason = 'waiting_email';
-      autoHint.textContent = t('autoHintEmail');
+      autoHint.textContent = getAutoHintEmailText();
       autoContinueBar.style.display = 'flex';
       btnAutoRun.disabled = false;
       inputRunCount.disabled = false;
@@ -619,10 +659,12 @@ function updateMailProviderUI() {
 }
 
 function updateEmailSourceUI() {
-  inputEmail.placeholder = t('placeholderEmail');
-  autoHint.textContent = t('autoHintEmail');
+  inputEmail.placeholder = getEmailPlaceholderText();
+  autoHint.textContent = autoContinueBar.dataset.reason === 'error'
+    ? t('autoHintError')
+    : getAutoHintEmailText();
   btnFetchEmail.disabled = false;
-  btnFetchEmail.title = t('titleFetchEmail');
+  btnFetchEmail.title = t('titleFetchEmail', { source: getSelectedEmailSourceLabel() });
   icloudSection.style.display = '';
 }
 
@@ -840,7 +882,7 @@ async function fetchConfiguredEmail() {
   const defaultLabel = t('btnAuto');
   btnFetchEmail.disabled = true;
   btnFetchEmail.textContent = '...';
-  const sourceLabel = t('icloudAliasName');
+  const sourceLabel = getSelectedEmailSourceLabel();
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -1512,6 +1554,15 @@ selectLanguage.addEventListener('change', async () => {
   });
 });
 
+selectEmailSource.addEventListener('change', async () => {
+  updateEmailSourceUI();
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { emailSource: getSelectedEmailSource() },
+  });
+});
+
 inputInbucketMailbox.addEventListener('change', async () => {
   await chrome.runtime.sendMessage({
     type: 'SAVE_SETTING',
@@ -1656,7 +1707,7 @@ chrome.runtime.onMessage.addListener((message) => {
       switch (phase) {
         case 'waiting_email':
           autoContinueBar.dataset.reason = 'waiting_email';
-          autoHint.textContent = t('autoHintEmail');
+          autoHint.textContent = getAutoHintEmailText();
           autoContinueBar.style.display = 'flex';
           setAutoRunButton(t('autoRunPaused', { runLabel }));
           btnAutoRun.disabled = false;
