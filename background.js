@@ -38,6 +38,7 @@ const DEFAULT_STATE = {
   oauthUrl: null,
   autoDeleteUsedIcloudAlias: false,
   emailSource: 'icloud',
+  forceRefreshOAuthBeforeStep6: false,
   email: null,
   password: null,
   accounts: [], // Successfully completed accounts: { email, password, createdAt }
@@ -838,6 +839,7 @@ async function resetState() {
       'language',
       'vpsUrl',
       'autoDeleteUsedIcloudAlias',
+      'forceRefreshOAuthBeforeStep6',
       'customPassword',
       'emailSource',
       'icloudHostPreference',
@@ -867,6 +869,7 @@ async function resetState() {
     language: prev.language || 'zh-CN',
     vpsUrl: prev.vpsUrl || '',
     autoDeleteUsedIcloudAlias: Boolean(prev.autoDeleteUsedIcloudAlias),
+    forceRefreshOAuthBeforeStep6: Boolean(prev.forceRefreshOAuthBeforeStep6),
     customPassword: prev.customPassword || '',
     emailSource: getEmailSource(prev),
     icloudHostPreference: prev.icloudHostPreference || 'auto',
@@ -1425,6 +1428,7 @@ async function handleMessage(message, sender) {
       if (message.payload.language !== undefined) updates.language = message.payload.language;
       if (message.payload.vpsUrl !== undefined) updates.vpsUrl = message.payload.vpsUrl;
       if (message.payload.autoDeleteUsedIcloudAlias !== undefined) updates.autoDeleteUsedIcloudAlias = Boolean(message.payload.autoDeleteUsedIcloudAlias);
+      if (message.payload.forceRefreshOAuthBeforeStep6 !== undefined) updates.forceRefreshOAuthBeforeStep6 = Boolean(message.payload.forceRefreshOAuthBeforeStep6);
       if (message.payload.customPassword !== undefined) updates.customPassword = message.payload.customPassword;
       if (message.payload.emailSource !== undefined) updates.emailSource = getEmailSource(message.payload);
       if (message.payload.icloudHostPreference !== undefined) updates.icloudHostPreference = message.payload.icloudHostPreference;
@@ -2308,6 +2312,24 @@ async function executeStep5(state) {
 }
 
 async function refreshOAuthIfTimedOutBeforeStep6(state) {
+  if (state.forceRefreshOAuthBeforeStep6) {
+    if (!state.vpsUrl) {
+      await addLog('Step 6: Force refresh is enabled, but CPA Auth URL is empty. Continuing with the current OAuth URL.', 'warn');
+      return state;
+    }
+
+    await addLog('Step 6: Force refresh is enabled. Fetching a new OAuth link before login...', 'warn');
+    await executeStepAndWait(1, 1500);
+
+    const refreshedState = await getState();
+    if (!refreshedState.oauthUrl) {
+      throw new Error('Step 1 completed but no OAuth URL was saved after forced refresh.');
+    }
+
+    await addLog('Step 6: New OAuth link obtained from forced refresh. Continuing login...', 'ok');
+    return refreshedState;
+  }
+
   if (!state.vpsUrl) {
     return state;
   }

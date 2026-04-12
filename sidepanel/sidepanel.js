@@ -24,6 +24,7 @@ const btnIcloudLoginDone = document.getElementById('btn-icloud-login-done');
 const btnIcloudRefresh = document.getElementById('btn-icloud-refresh');
 const btnIcloudDeleteUsed = document.getElementById('btn-icloud-delete-used');
 const checkboxAutoDeleteIcloud = document.getElementById('checkbox-auto-delete-icloud');
+const checkboxForceRefreshOAuthBeforeStep6 = document.getElementById('checkbox-force-refresh-oauth-before-step6');
 const inputIcloudSearch = document.getElementById('input-icloud-search');
 const selectIcloudFilter = document.getElementById('select-icloud-filter');
 const checkboxIcloudSelectAll = document.getElementById('checkbox-icloud-select-all');
@@ -106,6 +107,7 @@ const I18N = {
     labelAlias: '别名',
     labelCleanup: '清理',
     labelIcloudHost: 'iCloud',
+    labelStep6: '第 6 步',
     labelVerify: '验证',
     labelMailWait: '轮询',
     labelMailResend: '重发',
@@ -122,6 +124,7 @@ const I18N = {
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
     cleanupAutoDelete: '成功使用后自动删除 iCloud 别名',
+    step6ForceRefresh: '每次执行第 6 步前强制重新获取 OAuth',
     mailProvider163: '163 邮箱 (mail.163.com)',
     mailProviderQq: 'QQ 邮箱 (wx.mail.qq.com)',
     mailProviderGmail: 'Gmail (mail.google.com)',
@@ -264,6 +267,7 @@ const I18N = {
     labelAlias: 'Alias',
     labelCleanup: 'Cleanup',
     labelIcloudHost: 'iCloud',
+    labelStep6: 'Step 6',
     labelVerify: 'Verify',
     labelMailWait: 'Poll',
     labelMailResend: 'Resend',
@@ -280,6 +284,7 @@ const I18N = {
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
     cleanupAutoDelete: 'Delete iCloud alias after successful use',
+    step6ForceRefresh: 'Force refresh OAuth before every Step 6 run',
     mailProvider163: '163 Mail (mail.163.com)',
     mailProviderQq: 'QQ Mail (wx.mail.qq.com)',
     mailProviderGmail: 'Gmail (mail.google.com)',
@@ -592,6 +597,7 @@ async function restoreState() {
       inputVpsUrl.value = state.vpsUrl;
     }
     checkboxAutoDeleteIcloud.checked = Boolean(state.autoDeleteUsedIcloudAlias);
+    checkboxForceRefreshOAuthBeforeStep6.checked = Boolean(state.forceRefreshOAuthBeforeStep6);
     if (state.language) {
       selectLanguage.value = state.language;
     }
@@ -1526,6 +1532,14 @@ checkboxAutoDeleteIcloud.addEventListener('change', async () => {
     type: 'SAVE_SETTING',
     source: 'sidepanel',
     payload: { autoDeleteUsedIcloudAlias: checkboxAutoDeleteIcloud.checked },
+  });
+});
+
+checkboxForceRefreshOAuthBeforeStep6.addEventListener('change', async () => {
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { forceRefreshOAuthBeforeStep6: checkboxForceRefreshOAuthBeforeStep6.checked },
   });
 });
 
