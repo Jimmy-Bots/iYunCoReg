@@ -60,6 +60,8 @@ const DEFAULT_STATE = {
   spamokWaitNewAttempts: 2,
   inbucketHost: '',
   inbucketMailbox: '',
+  inbucketDomain: '',
+  inbucketSubdomain: '',
   lastSignupVerificationCode: '',
 };
 
@@ -798,6 +800,7 @@ async function fetchConfiguredEmail(options = {}) {
   const emailSource = getEmailSource(state);
   if (emailSource === 'duck') return fetchDuckEmail(options);
   if (emailSource === 'spamok') return fetchSpamokEmail(options);
+  if (emailSource === 'inbucket') return fetchInbucketEmail(options);
   return fetchIcloudHideMyEmail();
 }
 
@@ -805,6 +808,7 @@ function getEmailSource(state) {
   const emailSource = String(state?.emailSource || '').trim().toLowerCase();
   if (emailSource === 'duck') return 'duck';
   if (emailSource === 'spamok') return 'spamok';
+  if (emailSource === 'inbucket') return 'inbucket';
   return 'icloud';
 }
 
@@ -833,7 +837,7 @@ async function fetchDuckEmail(options = {}) {
   return result.email;
 }
 
-function generateSpamokMailboxName() {
+function generateFriendlyMailboxName() {
   const prefixes = [
     'blue', 'cloud', 'fast', 'green', 'lucky', 'mint', 'nova', 'prime', 'quiet', 'silver',
     'smart', 'solar', 'swift', 'tiny', 'ultra', 'urban', 'vivid', 'wild', 'zen', 'bright',
@@ -873,10 +877,65 @@ async function fetchSpamokEmail(options = {}) {
     return currentEmail;
   }
 
-  const mailbox = generateSpamokMailboxName();
+  const mailbox = generateFriendlyMailboxName();
   const email = `${mailbox}@spamok.com`;
   await setEmailState(email);
   await addLog(`SpamOK: Generated ${email}`, 'ok');
+  return email;
+}
+
+function normalizeDomainLabel(value) {
+  return String(value || '').trim().toLowerCase().replace(/\.+/g, '.').replace(/^\.+|\.+$/g, '');
+}
+
+function isValidDomainName(value) {
+  const normalized = normalizeDomainLabel(value);
+  if (!normalized) return false;
+  const labels = normalized.split('.');
+  return labels.every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
+
+function buildInbucketEmailDomain(state) {
+  const domain = normalizeDomainLabel(state?.inbucketDomain);
+  const subdomain = normalizeDomainLabel(state?.inbucketSubdomain);
+  if (!domain || !isValidDomainName(domain)) {
+    return { error: 'Inbucket domain is empty or invalid.' };
+  }
+  if (subdomain && !isValidDomainName(subdomain)) {
+    return { error: 'Inbucket subdomain is invalid.' };
+  }
+  return { domain: subdomain ? `${subdomain}.${domain}` : domain };
+}
+
+async function fetchInbucketEmail(options = {}) {
+  throwIfStopped();
+  const { generateNew = true } = options;
+  const state = await getState();
+  const currentEmail = String(state.email || '').trim();
+  const host = normalizeInbucketOrigin(state.inbucketHost);
+  const emailDomainResult = buildInbucketEmailDomain(state);
+
+  if (!host) {
+    throw new Error('Inbucket host is empty or invalid.');
+  }
+  if (emailDomainResult.error) {
+    throw new Error(emailDomainResult.error);
+  }
+
+  const emailDomain = emailDomainResult.domain;
+  if (!generateNew && currentEmail) {
+    const [localPart, domainPart] = currentEmail.split('@');
+    if (localPart && String(domainPart || '').trim().toLowerCase() === emailDomain) {
+      await setEmailState(currentEmail);
+      await addLog(`Inbucket: Reusing ${currentEmail}`, 'ok');
+      return currentEmail;
+    }
+  }
+
+  const mailbox = generateFriendlyMailboxName();
+  const email = `${mailbox}@${emailDomain}`;
+  await setEmailState(email);
+  await addLog(`Inbucket: Generated ${email} via ${host}`, 'ok');
   return email;
 }
 
@@ -903,6 +962,8 @@ async function resetState() {
       'spamokWaitNewAttempts',
       'inbucketHost',
       'inbucketMailbox',
+      'inbucketDomain',
+      'inbucketSubdomain',
     ]),
     getPersistentAliasState(),
   ]);
@@ -936,6 +997,8 @@ async function resetState() {
       : DEFAULT_STATE.spamokWaitNewAttempts,
     inbucketHost: prev.inbucketHost || '',
     inbucketMailbox: prev.inbucketMailbox || '',
+    inbucketDomain: prev.inbucketDomain || '',
+    inbucketSubdomain: prev.inbucketSubdomain || '',
   });
 }
 
@@ -1526,6 +1589,8 @@ async function handleMessage(message, sender) {
       }
       if (message.payload.inbucketHost !== undefined) updates.inbucketHost = message.payload.inbucketHost;
       if (message.payload.inbucketMailbox !== undefined) updates.inbucketMailbox = message.payload.inbucketMailbox;
+      if (message.payload.inbucketDomain !== undefined) updates.inbucketDomain = message.payload.inbucketDomain;
+      if (message.payload.inbucketSubdomain !== undefined) updates.inbucketSubdomain = message.payload.inbucketSubdomain;
       await setState(updates);
       return { ok: true };
     }
@@ -1866,7 +1931,9 @@ async function ensureAutoRunEmailReady(run, totalRuns) {
   const emailSource = getEmailSource(currentState);
   const sourceLabel = emailSource === 'duck'
     ? 'Duck Mail'
-    : (emailSource === 'spamok' ? 'SpamOK' : 'iCloud Hide My Email');
+    : (emailSource === 'spamok'
+      ? 'SpamOK'
+      : (emailSource === 'inbucket' ? 'Inbucket' : 'iCloud Hide My Email'));
 
   try {
     const email = await fetchConfiguredEmail({ generateNew: true });
@@ -1881,7 +1948,9 @@ async function ensureAutoRunEmailReady(run, totalRuns) {
       ? 'Generate or paste a Duck Mail address, then continue'
       : (emailSource === 'spamok'
         ? 'Generate or paste a SpamOK address, then continue'
-        : 'Generate or paste an iCloud alias, then continue');
+        : (emailSource === 'inbucket'
+          ? 'Generate or paste an Inbucket address, then continue'
+          : 'Generate or paste an iCloud alias, then continue'));
     await addLog(`=== Run ${run}/${totalRuns} PAUSED: ${pauseHint} ===`, 'warn');
     autoRunPausedPhase = 'waiting_email';
     await syncAutoRunState();
@@ -2183,6 +2252,37 @@ async function executeStep3(state) {
 // ============================================================
 
 function getMailConfig(state) {
+  if (getEmailSource(state) === 'inbucket') {
+    const host = normalizeInbucketOrigin(state.inbucketHost);
+    const email = String(state.email || '').trim();
+    const localPart = email.split('@')[0]?.trim();
+    const emailDomainResult = buildInbucketEmailDomain(state);
+
+    if (!host) {
+      return { error: 'Inbucket host is empty or invalid.' };
+    }
+    if (emailDomainResult.error) {
+      return { error: emailDomainResult.error };
+    }
+    if (!email || !localPart) {
+      return { error: 'Inbucket email is empty or invalid. Use Auto to generate an Inbucket address first.' };
+    }
+
+    const expectedSuffix = `@${emailDomainResult.domain}`;
+    if (!email.toLowerCase().endsWith(expectedSuffix)) {
+      return { error: `Inbucket email must end with ${expectedSuffix}.` };
+    }
+
+    return {
+      source: 'inbucket-mail',
+      url: `${host}/m/${encodeURIComponent(localPart)}/`,
+      label: `Inbucket Mailbox (${localPart})`,
+      navigateOnReuse: true,
+      inject: ['content/utils.js', 'content/inbucket-mail.js'],
+      injectSource: 'inbucket-mail',
+    };
+  }
+
   if (getEmailSource(state) === 'spamok') {
     const email = String(state.email || '').trim();
     const localPart = email.split('@')[0]?.trim();
@@ -2356,6 +2456,7 @@ async function pollVerificationCodeWithAutoResend(options) {
           `Step 7: Ignoring code ${result.code} because it matches the signup verification code from step 4. Waiting for a fresh login code...`,
           'warn'
         );
+        round -= 1;
         continue;
       }
 

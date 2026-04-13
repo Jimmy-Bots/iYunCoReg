@@ -127,6 +127,10 @@ function parseMailboxEntry(entry, index = 0) {
   };
 }
 
+function getCandidatePriority(mail) {
+  return mail.unread ? 0 : 1;
+}
+
 function getCurrentMailboxIds() {
   const ids = new Set();
   Array.from(findMailboxEntries()).forEach((entry, index) => {
@@ -256,7 +260,6 @@ async function handleMailboxPollEmail(step, payload) {
     const candidates = [];
 
     for (const mail of entries) {
-      if (!mail.unread) continue;
       if (seenMailIds.has(mail.mailId)) continue;
       if (!useFallback && existingMailIds.has(mail.mailId)) continue;
 
@@ -265,6 +268,8 @@ async function handleMailboxPollEmail(step, payload) {
 
       candidates.push({ ...mail, code: match.code });
     }
+
+    candidates.sort((a, b) => getCandidatePriority(a) - getCandidatePriority(b));
 
     for (const mail of candidates) {
       const code = mail.code || extractVerificationCode(mail.combinedText);
@@ -277,8 +282,9 @@ async function handleMailboxPollEmail(step, payload) {
       await persistSeenMailIds();
 
       const source = existingMailIds.has(mail.mailId) ? 'fallback' : 'new';
+      const readState = mail.unread ? 'unread' : 'read';
       log(
-        `Step ${step}: Code found: ${code} (${source}, sender: ${mail.sender || 'unknown'}, subject: ${(mail.subject || '').slice(0, 60)})`,
+        `Step ${step}: Code found: ${code} (${source}, ${readState}, sender: ${mail.sender || 'unknown'}, subject: ${(mail.subject || '').slice(0, 60)})`,
         'ok'
       );
 

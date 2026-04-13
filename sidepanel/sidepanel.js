@@ -63,6 +63,10 @@ const rowSpamokNewMailConfig = document.getElementById('row-spamok-new-mail-conf
 const inputSpamokWaitNewAttempts = document.getElementById('input-spamok-wait-new-attempts');
 const rowInbucketHost = document.getElementById('row-inbucket-host');
 const inputInbucketHost = document.getElementById('input-inbucket-host');
+const rowInbucketDomain = document.getElementById('row-inbucket-domain');
+const inputInbucketDomain = document.getElementById('input-inbucket-domain');
+const rowInbucketSubdomain = document.getElementById('row-inbucket-subdomain');
+const inputInbucketSubdomain = document.getElementById('input-inbucket-subdomain');
 const rowInbucketMailbox = document.getElementById('row-inbucket-mailbox');
 const inputInbucketMailbox = document.getElementById('input-inbucket-mailbox');
 const mailLoginHelp = document.getElementById('mail-login-help');
@@ -117,6 +121,8 @@ const I18N = {
     labelMailResend: '重发',
     labelSpamokFresh: '新信',
     labelInbucket: 'Inbucket',
+    labelDomain: '主域名',
+    labelSubdomain: '子域名',
     labelMailbox: '邮箱名',
     labelEmail: '邮箱',
     labelPassword: '密码',
@@ -126,6 +132,7 @@ const I18N = {
     emailSourceIcloud: 'iCloud Hide My Email',
     emailSourceDuck: 'Duck Mail',
     emailSourceSpamok: 'SpamOK',
+    emailSourceInbucket: 'Inbucket',
     icloudHostAuto: '自动',
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
@@ -135,8 +142,10 @@ const I18N = {
     mailProviderQq: 'QQ 邮箱 (wx.mail.qq.com)',
     mailProviderGmail: 'Gmail (mail.google.com)',
     mailProviderInbucket: 'Inbucket（自定义主机）',
-    placeholderCpaAuth: 'CPA: http://ip:port/management.html#/oauth 或 Sub2API: https://host/admin/accounts',
+    placeholderCpaAuth: '填写 Sub2API 或 CPA 链接',
     placeholderInbucketHost: '你的 inbucket 主机或 https://你的主机',
+    placeholderInbucketDomain: '例如 example.com',
+    placeholderInbucketSubdomain: '例如 mail，可留空',
     placeholderInbucketMailbox: '例如 zju2001',
     placeholderMailPollAttempts: '次数，例如 20',
     placeholderMailPollInterval: '间隔秒，例如 3',
@@ -147,6 +156,7 @@ const I18N = {
     placeholderEmailIcloud: '使用 Auto 生成 iCloud 别名，或手动粘贴',
     placeholderEmailDuck: '使用 Auto 获取 Duck 邮箱，或手动粘贴',
     placeholderEmailSpamok: '使用 Auto 生成 SpamOK 邮箱，或手动粘贴',
+    placeholderEmailInbucket: '使用 Auto 生成 Inbucket 邮箱，或手动粘贴',
     placeholderPassword: '留空则自动生成',
     waiting: '等待中...',
     btnConfirm: '确定',
@@ -195,7 +205,9 @@ const I18N = {
     autoHintEmailIcloud: '使用 Auto 生成 iCloud 别名，或手动粘贴后继续',
     autoHintEmailDuck: '使用 Auto 获取 Duck 邮箱，或手动粘贴后继续',
     autoHintEmailSpamok: '使用 Auto 生成 SpamOK 邮箱，或手动粘贴后继续',
+    autoHintEmailInbucket: '使用 Auto 生成 Inbucket 邮箱，或手动粘贴后继续',
     autoHintError: '自动运行被错误中断。修复问题或跳过失败步骤后继续',
+    invalidAuthUrlFormat: '链接格式错误，请填写 CPA 或 Sub2API 链接',
     fetchedEmail: ({ email }) => `已获取 ${email}`,
     autoFetchFailed: ({ message }) => `自动获取失败：${message}`,
     icloudSummaryInitial: '加载你的 Hide My Email 别名以便在这里管理。',
@@ -282,6 +294,8 @@ const I18N = {
     labelMailResend: 'Resend',
     labelSpamokFresh: 'Fresh',
     labelInbucket: 'Inbucket',
+    labelDomain: 'Domain',
+    labelSubdomain: 'Subdomain',
     labelMailbox: 'Mailbox',
     labelEmail: 'Email',
     labelPassword: 'Password',
@@ -291,6 +305,7 @@ const I18N = {
     emailSourceIcloud: 'iCloud Hide My Email',
     emailSourceDuck: 'Duck Mail',
     emailSourceSpamok: 'SpamOK',
+    emailSourceInbucket: 'Inbucket',
     icloudHostAuto: 'Auto',
     icloudHostCom: 'iCloud.com',
     icloudHostCn: 'iCloud.com.cn',
@@ -300,8 +315,10 @@ const I18N = {
     mailProviderQq: 'QQ Mail (wx.mail.qq.com)',
     mailProviderGmail: 'Gmail (mail.google.com)',
     mailProviderInbucket: 'Inbucket (custom host)',
-    placeholderCpaAuth: 'CPA: http://ip:port/management.html#/oauth or Sub2API: https://host/admin/accounts',
+    placeholderCpaAuth: 'Enter a Sub2API or CPA URL',
     placeholderInbucketHost: 'your inbucket host or https://your-host',
+    placeholderInbucketDomain: 'e.g. example.com',
+    placeholderInbucketSubdomain: 'e.g. mail, optional',
     placeholderInbucketMailbox: 'e.g. zju2001',
     placeholderMailPollAttempts: 'Attempts, e.g. 20',
     placeholderMailPollInterval: 'Interval sec, e.g. 3',
@@ -312,6 +329,7 @@ const I18N = {
     placeholderEmailIcloud: 'Use Auto to generate an iCloud alias, or paste manually',
     placeholderEmailDuck: 'Use Auto to fetch a Duck Mail address, or paste manually',
     placeholderEmailSpamok: 'Use Auto to generate a SpamOK address, or paste manually',
+    placeholderEmailInbucket: 'Use Auto to generate an Inbucket address, or paste manually',
     placeholderPassword: 'Leave blank to auto-generate',
     waiting: 'Waiting...',
     btnConfirm: 'OK',
@@ -360,7 +378,9 @@ const I18N = {
     autoHintEmailIcloud: 'Use Auto to generate an iCloud alias, or paste manually, then continue',
     autoHintEmailDuck: 'Use Auto to fetch a Duck Mail address, or paste manually, then continue',
     autoHintEmailSpamok: 'Use Auto to generate a SpamOK address, or paste manually, then continue',
+    autoHintEmailInbucket: 'Use Auto to generate an Inbucket address, or paste manually, then continue',
     autoHintError: 'Auto run was interrupted by an error. Fix it or skip the failed step, then continue',
+    invalidAuthUrlFormat: 'Invalid URL format. Enter a CPA or Sub2API URL.',
     fetchedEmail: ({ email }) => `Fetched ${email}`,
     autoFetchFailed: ({ message }) => `Auto fetch failed: ${message}`,
     icloudSummaryInitial: 'Load your Hide My Email aliases to manage them here.',
@@ -455,24 +475,28 @@ function getSelectedEmailSource() {
   const emailSource = String(selectEmailSource?.value || '').trim().toLowerCase();
   if (emailSource === 'duck') return 'duck';
   if (emailSource === 'spamok') return 'spamok';
+  if (emailSource === 'inbucket') return 'inbucket';
   return 'icloud';
 }
 
 function getSelectedEmailSourceLabel() {
   if (getSelectedEmailSource() === 'duck') return t('emailSourceDuck');
   if (getSelectedEmailSource() === 'spamok') return t('emailSourceSpamok');
+  if (getSelectedEmailSource() === 'inbucket') return t('emailSourceInbucket');
   return t('emailSourceIcloud');
 }
 
 function getEmailPlaceholderText() {
   if (getSelectedEmailSource() === 'duck') return t('placeholderEmailDuck');
   if (getSelectedEmailSource() === 'spamok') return t('placeholderEmailSpamok');
+  if (getSelectedEmailSource() === 'inbucket') return t('placeholderEmailInbucket');
   return t('placeholderEmailIcloud');
 }
 
 function getAutoHintEmailText() {
   if (getSelectedEmailSource() === 'duck') return t('autoHintEmailDuck');
   if (getSelectedEmailSource() === 'spamok') return t('autoHintEmailSpamok');
+  if (getSelectedEmailSource() === 'inbucket') return t('autoHintEmailInbucket');
   return t('autoHintEmailIcloud');
 }
 
@@ -527,13 +551,60 @@ function applyLanguage(language) {
 
 async function saveVpsUrlValue(value) {
   const vpsUrl = String(value || '').trim();
-  inputVpsUrl.value = vpsUrl;
-  if (!vpsUrl) return;
+  const normalizedVpsUrl = normalizeAuthPanelUrl(vpsUrl);
+  if (!vpsUrl) {
+    inputVpsUrl.value = '';
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_SETTING',
+      source: 'sidepanel',
+      payload: { vpsUrl: '' },
+    });
+    return true;
+  }
+
+  if (!normalizedVpsUrl) {
+    inputVpsUrl.value = '';
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_SETTING',
+      source: 'sidepanel',
+      payload: { vpsUrl: '' },
+    });
+    showToast(t('invalidAuthUrlFormat'), 'error');
+    return false;
+  }
+
+  inputVpsUrl.value = normalizedVpsUrl;
   await chrome.runtime.sendMessage({
     type: 'SAVE_SETTING',
     source: 'sidepanel',
-    payload: { vpsUrl },
+    payload: { vpsUrl: normalizedVpsUrl },
   });
+  return true;
+}
+
+function normalizeAuthPanelUrl(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+
+  let parsed;
+  try {
+    parsed = new URL(rawValue);
+  } catch {
+    return '';
+  }
+
+  const path = parsed.pathname.replace(/\/+$/, '');
+  const hash = parsed.hash || '';
+  const isSub2api = parsed.protocol === 'https:' && path === '/admin/accounts' && !hash;
+  const isCpa = (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+    && path === '/management.html'
+    && hash === '#/oauth';
+
+  if (!isSub2api && !isCpa) {
+    return '';
+  }
+
+  return parsed.toString();
 }
 
 async function copyTextValue(value, kind) {
@@ -552,6 +623,30 @@ async function copyTextValue(value, kind) {
   }
 }
 
+async function syncCurrentFormSettings() {
+  const rawSpamokWaitNewAttempts = parseInt(inputSpamokWaitNewAttempts.value, 10);
+  const spamokWaitNewAttempts = Number.isFinite(rawSpamokWaitNewAttempts)
+    ? Math.min(120, Math.max(0, rawSpamokWaitNewAttempts))
+    : 2;
+
+  inputSpamokWaitNewAttempts.value = String(spamokWaitNewAttempts);
+
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: {
+      emailSource: getSelectedEmailSource(),
+      mailProvider: selectMailProvider.value,
+      icloudHostPreference: selectIcloudHostPreference.value || 'auto',
+      spamokWaitNewAttempts,
+      inbucketHost: inputInbucketHost.value.trim(),
+      inbucketMailbox: inputInbucketMailbox.value.trim(),
+      inbucketDomain: inputInbucketDomain.value.trim(),
+      inbucketSubdomain: inputInbucketSubdomain.value.trim(),
+    },
+  });
+}
+
 async function pasteCpaAuthFromClipboard(options = {}) {
   const { silentIfFilled = false } = options;
   if (silentIfFilled && inputVpsUrl.value.trim()) return;
@@ -562,8 +657,10 @@ async function pasteCpaAuthFromClipboard(options = {}) {
       showToast(t('clipboardEmpty'), 'warn');
       return;
     }
-    await saveVpsUrlValue(text);
-    showToast(t('pastedCpaAuth'), 'success', 2000);
+    const saved = await saveVpsUrlValue(text);
+    if (saved) {
+      showToast(t('pastedCpaAuth'), 'success', 2000);
+    }
   } catch (err) {
     showToast(t('pasteFailed', { message: err.message || err }), 'warn');
   }
@@ -634,6 +731,12 @@ async function restoreState() {
     if (state.inbucketHost) {
       inputInbucketHost.value = state.inbucketHost;
     }
+    if (state.inbucketDomain) {
+      inputInbucketDomain.value = state.inbucketDomain;
+    }
+    if (state.inbucketSubdomain) {
+      inputInbucketSubdomain.value = state.inbucketSubdomain;
+    }
     if (state.inbucketMailbox) {
       inputInbucketMailbox.value = state.inbucketMailbox;
     }
@@ -678,12 +781,15 @@ function syncPasswordField(state) {
 }
 
 function updateMailProviderUI() {
-  const useSpamok = getSelectedEmailSource() === 'spamok';
+  const selectedSource = getSelectedEmailSource();
+  const useSourceManagedMailbox = selectedSource === 'spamok' || selectedSource === 'inbucket';
   const useInbucket = selectMailProvider.value === 'inbucket';
-  rowMailProvider.style.display = useSpamok ? 'none' : '';
-  rowSpamokNewMailConfig.style.display = useSpamok ? '' : 'none';
-  rowInbucketHost.style.display = !useSpamok && useInbucket ? '' : 'none';
-  rowInbucketMailbox.style.display = !useSpamok && useInbucket ? '' : 'none';
+  rowMailProvider.style.display = useSourceManagedMailbox ? 'none' : '';
+  rowSpamokNewMailConfig.style.display = selectedSource === 'spamok' ? '' : 'none';
+  rowInbucketHost.style.display = (selectedSource === 'inbucket' || (!useSourceManagedMailbox && useInbucket)) ? '' : 'none';
+  rowInbucketDomain.style.display = selectedSource === 'inbucket' ? '' : 'none';
+  rowInbucketSubdomain.style.display = selectedSource === 'inbucket' ? '' : 'none';
+  rowInbucketMailbox.style.display = !useSourceManagedMailbox && useInbucket ? '' : 'none';
 }
 
 function updateEmailSourceUI() {
@@ -918,6 +1024,7 @@ async function fetchConfiguredEmail() {
   const sourceLabel = getSelectedEmailSourceLabel();
 
   try {
+    await syncCurrentFormSettings();
     const response = await chrome.runtime.sendMessage({
       type: 'FETCH_AUTO_EMAIL',
       source: 'sidepanel',
@@ -1269,6 +1376,8 @@ function syncPasswordToggleLabel() {
 }
 
 async function executeStepFromSidepanel(step) {
+  await syncCurrentFormSettings();
+
   if (step === 3) {
     const email = inputEmail.value.trim();
     if (!email) {
@@ -1467,6 +1576,7 @@ btnAutoRun.addEventListener('click', async () => {
   btnAutoRun.disabled = true;
   inputRunCount.disabled = true;
   setAutoRunButton(t('autoRunRunning', { runLabel: '' }));
+  await syncCurrentFormSettings();
   await chrome.runtime.sendMessage({ type: 'AUTO_RUN', source: 'sidepanel', payload: { totalRuns } });
 });
 
@@ -1531,10 +1641,7 @@ inputEmail.addEventListener('change', async () => {
 });
 
 inputVpsUrl.addEventListener('change', async () => {
-  const vpsUrl = inputVpsUrl.value.trim();
-  if (vpsUrl) {
-    await chrome.runtime.sendMessage({ type: 'SAVE_SETTING', source: 'sidepanel', payload: { vpsUrl } });
-  }
+  await saveVpsUrlValue(inputVpsUrl.value);
 });
 
 inputVpsUrl.addEventListener('click', async () => {
@@ -1660,6 +1767,22 @@ inputInbucketHost.addEventListener('change', async () => {
     type: 'SAVE_SETTING',
     source: 'sidepanel',
     payload: { inbucketHost: inputInbucketHost.value.trim() },
+  });
+});
+
+inputInbucketDomain.addEventListener('change', async () => {
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { inbucketDomain: inputInbucketDomain.value.trim() },
+  });
+});
+
+inputInbucketSubdomain.addEventListener('change', async () => {
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { inbucketSubdomain: inputInbucketSubdomain.value.trim() },
   });
 });
 

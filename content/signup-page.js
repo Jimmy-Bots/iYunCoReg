@@ -478,8 +478,18 @@ async function step8_findAndClick() {
   await ensureAuthSurfaceReady(8);
   log('Step 8: Looking for OAuth consent "继续" button...');
 
+  const phoneRequiredError = findStep8BlockingError();
+  if (phoneRequiredError) {
+    throw new Error(`${phoneRequiredError}。请更换环境重试。`);
+  }
+
   const continueBtn = await findContinueButton();
   await waitForButtonEnabled(continueBtn);
+
+  const phoneRequiredErrorAfterButton = findStep8BlockingError();
+  if (phoneRequiredErrorAfterButton) {
+    throw new Error(`${phoneRequiredErrorAfterButton}。请更换环境重试。`);
+  }
 
   await humanPause(350, 900);
   continueBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -493,6 +503,25 @@ async function step8_findAndClick() {
     buttonText: (continueBtn.textContent || '').trim(),
     url: location.href,
   };
+}
+
+function findStep8BlockingError() {
+  const candidates = Array.from(document.querySelectorAll([
+    'h1',
+    '[role="alert"]',
+    '[aria-live="polite"]',
+    '[class*="error"]',
+  ].join(', ')));
+
+  for (const node of candidates) {
+    const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    if (/电话号码是必填项|phone number is required|required phone number/i.test(text)) {
+      return text;
+    }
+  }
+
+  return '';
 }
 
 async function findContinueButton() {
