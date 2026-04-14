@@ -237,12 +237,12 @@ async function step9_vpsVerify(payload) {
   try {
     submitBtn = await waitForElementByText(
       '[class*="callbackActions"] button, [class*="callbackSection"] button',
-      /提交/,
+      /提交|submit|callback/i,
       5000
     );
   } catch {
     try {
-      submitBtn = await waitForElementByText('button.btn', /提交回调/, 5000);
+      submitBtn = await waitForElementByText('button.btn', /提交回调|submit callback|submit/i, 5000);
     } catch {
       throw new Error('Could not find "提交回调 URL" button. URL: ' + location.href);
     }
@@ -254,7 +254,7 @@ async function step9_vpsVerify(payload) {
 
   // Wait for "认证成功！" status badge to appear
   try {
-    await waitForElementByText('.status-badge, [class*="status"]', /认证成功/, 30000);
+    await waitForElementByText('.status-badge, [class*="status"]', /认证成功|授权成功|认证完成|success|authenticated|authorized/i, 30000);
     log('Step 9: Authentication successful!', 'ok');
   } catch {
     // Check if there's an error message instead

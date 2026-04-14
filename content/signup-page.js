@@ -321,7 +321,7 @@ async function fillVerificationCode(step, payload) {
   let codeInput = null;
   try {
     codeInput = await waitForElement(
-      'input[name="code"], input[name="otp"], input[type="text"][maxlength="6"], input[aria-label*="code"], input[placeholder*="code"], input[placeholder*="Code"], input[inputmode="numeric"]',
+      'input[name="code"], input[name="otp"], input[type="text"][maxlength="6"], input[aria-label*="code" i], input[placeholder*="code" i], input[inputmode="numeric"]',
       10000
     );
   } catch {
@@ -385,7 +385,7 @@ async function findVerificationResendButton(timeout = 10000) {
     return await waitForElement(selector, timeout);
   } catch {
     try {
-      return await waitForElementByText('button', /重新发送电子邮件|重新发送|resend email|resend/i, Math.max(3000, timeout / 2));
+      return await waitForElementByText('button', /重新发送电子邮件|重新发送|resend email|resend|send again/i, Math.max(3000, timeout / 2));
     } catch {
       throw new Error('Could not find the resend button on the verification page. URL: ' + location.href);
     }
@@ -556,7 +556,7 @@ async function findContinueButton() {
     );
   } catch {
     try {
-      return await waitForElementByText('button', /继续|Continue/, 5000);
+      return await waitForElementByText('button', /继续|continue|allow|authorize|agree/i, 5000);
     } catch {
       throw new Error('Could not find "继续" button on OAuth consent page. URL: ' + location.href);
     }
@@ -621,7 +621,7 @@ async function step5_fillNameBirthday(payload) {
   let nameInput = null;
   try {
     nameInput = await waitForElement(
-      'input[name="name"], input[placeholder*="全名"], input[autocomplete="name"]',
+      'input[name="name"], input[placeholder*="全名"], input[placeholder*="full name" i], input[autocomplete="name"]',
       10000
     );
   } catch {
