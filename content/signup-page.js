@@ -5,7 +5,7 @@ console.log('[MultiPage:signup-page] Content script loaded on', location.href);
 
 // Listen for commands from Background
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'EXECUTE_STEP' || message.type === 'FILL_CODE' || message.type === 'STEP8_FIND_AND_CLICK' || message.type === 'WAIT_FOR_SURFACE' || message.type === 'RESEND_VERIFICATION_CODE') {
+  if (message.type === 'EXECUTE_STEP' || message.type === 'FILL_CODE' || message.type === 'STEP8_FIND_AND_CLICK' || message.type === 'WAIT_FOR_SURFACE' || message.type === 'RESEND_VERIFICATION_CODE' || message.type === 'CHECK_PAGE_RECOVERY_STATE') {
     resetStopState();
     handleCommand(message).then((result) => {
       sendResponse({ ok: true, ...(result || {}) });
@@ -55,7 +55,31 @@ async function handleCommand(message) {
       return await waitForSurfacePayload(message.payload);
     case 'RESEND_VERIFICATION_CODE':
       return await resendVerificationCode(message.step, message.payload);
+    case 'CHECK_PAGE_RECOVERY_STATE':
+      return getPageRecoveryState();
   }
+}
+
+function getPageRecoveryState() {
+  const bodyText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+  const hasOopsHeading = /糟糕，出错了|something went wrong/i.test(bodyText);
+  const hasOperationTimedOut = /operation timed out/i.test(bodyText);
+
+  if (hasOopsHeading && hasOperationTimedOut) {
+    return {
+      recoverable: true,
+      type: 'operation_timed_out',
+      message: 'Operation timed out',
+      url: location.href,
+    };
+  }
+
+  return {
+    recoverable: false,
+    type: '',
+    message: '',
+    url: location.href,
+  };
 }
 
 async function ensureAuthSurfaceReady(step, timeout = 15000) {

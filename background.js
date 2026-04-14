@@ -1904,6 +1904,24 @@ async function waitForSignupSurface(payload, timeout = 20000) {
   throw new Error(`Signup page surface wait failed: ${getErrorMessage(lastError)}`);
 }
 
+async function getSignupPageRecoveryState() {
+  const tabId = await getTabId('signup-page');
+  if (!tabId) {
+    return null;
+  }
+
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: 'CHECK_PAGE_RECOVERY_STATE',
+      source: 'background',
+      payload: {},
+    });
+    return response || null;
+  } catch {
+    return null;
+  }
+}
+
 function getAutoResumeStep(state) {
   const statuses = state?.stepStatuses || {};
 
@@ -2223,28 +2241,50 @@ async function executeStep3(state) {
   const password = state.customPassword || generatePassword();
   await setPasswordState(password);
 
-  await addLog(
-    `Step 3: Filling email ${state.email}, password ${state.customPassword ? 'customized' : 'generated'} (${password.length} chars)`
-  );
-  await sendToContentScript('signup-page', {
-    type: 'EXECUTE_STEP',
-    step: 3,
-    source: 'background',
-    payload: { email: state.email, password },
-  });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    await addLog(
+      `Step 3: Filling email ${state.email}, password ${state.customPassword ? 'customized' : 'generated'} (${password.length} chars)`
+        + (attempt > 1 ? ` [retry ${attempt}/2]` : '')
+    );
 
-  await waitForSignupSurface({
-    step: 3,
-    selectors: [
-      'input[name="code"]',
-      'input[name="otp"]',
-      'input[maxlength="1"]',
-      'input[name="name"]',
-      'input[placeholder*="全名"]',
-      '[role="spinbutton"][data-type="year"]',
-      'input[name="age"]',
-    ],
-  });
+    try {
+      await sendToContentScript('signup-page', {
+        type: 'EXECUTE_STEP',
+        step: 3,
+        source: 'background',
+        payload: { email: state.email, password },
+      });
+
+      await waitForSignupSurface({
+        step: 3,
+        selectors: [
+          'input[name="code"]',
+          'input[name="otp"]',
+          'input[maxlength="1"]',
+          'input[name="name"]',
+          'input[placeholder*="全名"]',
+          '[role="spinbutton"][data-type="year"]',
+          'input[name="age"]',
+        ],
+      });
+      return;
+    } catch (err) {
+      const recoveryState = await getSignupPageRecoveryState();
+      const canRecover = attempt < 2 && recoveryState?.recoverable && recoveryState.type === 'operation_timed_out';
+      if (!canRecover) {
+        throw err;
+      }
+
+      await addLog(
+        'Step 3: OpenAI showed "Operation timed out" after submit. Re-running step 2 and retrying step 3...',
+        'warn'
+      );
+
+      const latestState = await getState();
+      await executeStep2(latestState);
+      await sleepWithStop(1200);
+    }
+  }
 }
 
 // ============================================================
