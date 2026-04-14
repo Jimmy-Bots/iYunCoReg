@@ -89,7 +89,7 @@ function findGenerateAuthButton() {
 }
 
 function findAddAccountButton() {
-  return findVisibleButtonByText(/添加账号|add account/i);
+  return findVisibleButtonByText(/添加账号|add account|create account/i);
 }
 
 function findOpenAiButton() {
@@ -240,7 +240,7 @@ async function step1_getOAuthLink(payload = {}) {
 
   let generateButton = findGenerateAuthButton();
   if (!generateButton) {
-    const addAccountButton = findAddAccountButton() || await waitForElementByText('button', /添加账号|add account/i, 15000);
+    const addAccountButton = findAddAccountButton() || await waitForElementByText('button', /添加账号|add account|create account/i, 15000);
     await humanPause(250, 700);
     simulateClick(addAccountButton);
     log('Step 1: Clicked "添加账号" in Sub2API');

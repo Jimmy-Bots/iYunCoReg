@@ -205,7 +205,7 @@ async function deleteEmail(item, step) {
     item.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
     await sleep(300);
 
-    const trashIcon = item.querySelector('[sign="trash"], .nui-ico-delete, [title="删除邮件"]');
+    const trashIcon = item.querySelector('[sign="trash"], .nui-ico-delete, [title="删除邮件"], [title="Delete email"], [title*="delete" i]');
     if (trashIcon) {
       trashIcon.click();
       log(`Step ${step}: Clicked trash icon`, 'ok');
@@ -231,7 +231,8 @@ async function deleteEmail(item, step) {
       // Click toolbar delete button
       const toolbarBtns = document.querySelectorAll('.nui-btn .nui-btn-text');
       for (const btn of toolbarBtns) {
-        if (btn.textContent.replace(/\s/g, '').includes('删除')) {
+        const text = btn.textContent.replace(/\s/g, '');
+        if (/删除|delete/i.test(text)) {
           btn.closest('.nui-btn').click();
           log(`Step ${step}: Clicked toolbar delete`, 'ok');
           await sleep(1500);
@@ -254,7 +255,8 @@ async function refreshInbox() {
   // Try toolbar "刷 新" button
   const toolbarBtns = document.querySelectorAll('.nui-btn .nui-btn-text');
   for (const btn of toolbarBtns) {
-    if (btn.textContent.replace(/\s/g, '') === '刷新') {
+    const text = btn.textContent.replace(/\s/g, '');
+    if (/^刷新$|^refresh$/i.test(text)) {
       btn.closest('.nui-btn').click();
       console.log(MAIL163_PREFIX, 'Clicked "刷新" button');
       await sleep(800);
@@ -265,7 +267,8 @@ async function refreshInbox() {
   // Fallback: click sidebar "收 信"
   const shouXinBtns = document.querySelectorAll('.ra0');
   for (const btn of shouXinBtns) {
-    if (btn.textContent.replace(/\s/g, '').includes('收信')) {
+    const text = btn.textContent.replace(/\s/g, '');
+    if (/收信|inbox|receive/i.test(text)) {
       btn.click();
       console.log(MAIL163_PREFIX, 'Clicked "收信" button');
       await sleep(800);

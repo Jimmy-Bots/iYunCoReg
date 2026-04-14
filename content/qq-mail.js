@@ -54,8 +54,11 @@ function findVisibleDeleteButton() {
   const buttons = document.querySelectorAll('.ui-toolbar-ellipsis-btns .xmail-ui-btn');
   for (const button of buttons) {
     const text = (button.querySelector('.ui-btn-text')?.textContent || '').trim();
+    const title = (button.getAttribute('title') || button.getAttribute('aria-label') || '').trim();
     const style = window.getComputedStyle(button);
-    if (text === '删除' && style.visibility !== 'hidden' && style.display !== 'none') {
+    if ((/^(删除|delete)$/i.test(text) || /删除|delete/i.test(title))
+      && style.visibility !== 'hidden'
+      && style.display !== 'none') {
       return button;
     }
   }
@@ -195,7 +198,7 @@ async function refreshInbox() {
   // Try multiple strategies to refresh the mail list
 
   // Strategy 1: Click any visible refresh button
-  const refreshBtn = document.querySelector('[class*="refresh"], [title*="刷新"]');
+  const refreshBtn = document.querySelector('[class*="refresh"], [title*="刷新"], [title*="Refresh" i], [aria-label*="Refresh" i]');
   if (refreshBtn) {
     simulateClick(refreshBtn);
     console.log(QQ_MAIL_PREFIX, 'Clicked refresh button');
@@ -204,7 +207,7 @@ async function refreshInbox() {
   }
 
   // Strategy 2: Click inbox in sidebar to reload list
-  const sidebarInbox = document.querySelector('a[href*="inbox"], [class*="folder-item"][class*="inbox"], [title="收件箱"]');
+  const sidebarInbox = document.querySelector('a[href*="inbox"], [class*="folder-item"][class*="inbox"], [title="收件箱"], [title="Inbox"], [aria-label*="Inbox" i]');
   if (sidebarInbox) {
     simulateClick(sidebarInbox);
     console.log(QQ_MAIL_PREFIX, 'Clicked sidebar inbox');
