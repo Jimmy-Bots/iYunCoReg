@@ -179,7 +179,7 @@ async function checkOauthTimeoutStatus() {
 }
 
 async function ensureAccountModalReady(targetEmail) {
-  const nameInput = await waitForElement('input[data-tour="account-form-name"], input[placeholder*="账号名称"]', 10000);
+  const nameInput = await waitForElement('input[data-tour="account-form-name"], input[placeholder*="账号名称"], input[placeholder*="account name" i]', 10000);
   await humanPause(350, 900);
   fillInput(nameInput, targetEmail);
   log(`Step 1: Filled Sub2API account name: ${targetEmail}`);

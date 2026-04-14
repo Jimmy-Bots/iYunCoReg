@@ -2050,6 +2050,7 @@ async function executeStep3(state) {
           'input[maxlength="1"]',
           'input[name="name"]',
           'input[placeholder*="全名"]',
+          'input[placeholder*="full name" i]',
           '[role="spinbutton"][data-type="year"]',
           'input[name="age"]',
         ],
@@ -2367,6 +2368,7 @@ async function executeStep4(state) {
       successSelectors: [
         'input[name="name"]',
         'input[placeholder*="全名"]',
+        'input[placeholder*="full name" i]',
         '[role="spinbutton"][data-type="year"]',
         'input[name="birthday"]',
         'input[name="age"]',
@@ -2620,7 +2622,7 @@ async function executeStep7(state) {
       successSelectors: [
         'button[type="submit"][data-dd-action-name="Continue"]',
         'button[type="submit"]._primary_3rdp0_107',
-        'button[aria-label*="Continue"]',
+        'button[aria-label*="Continue" i]',
       ],
       resendRounds: mailPollConfig.resendRounds,
       beforeResend: async () => {
