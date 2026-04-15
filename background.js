@@ -318,6 +318,15 @@ function getErrorMessage(error) {
   return String(error?.message || error || 'Unknown error');
 }
 
+function isBenignNavigationChannelClose(error) {
+  const message = getErrorMessage(error).toLowerCase();
+  return message.includes('message channel is closed')
+    || message.includes('message port closed')
+    || message.includes('before a response was received')
+    || message.includes('back/forward cache')
+    || message.includes('bfcache');
+}
+
 function normalizeIcloudHost(rawHost) {
   const host = String(rawHost || '').trim().toLowerCase();
   if (!host) return '';
@@ -908,6 +917,59 @@ async function isTabAlive(source) {
 async function getTabId(source) {
   const registry = await getTabRegistry();
   return registry[source]?.tabId || null;
+}
+
+async function unregisterTab(source) {
+  const registry = await getTabRegistry();
+  if (registry[source]) {
+    registry[source] = null;
+    await setState({ tabRegistry: registry });
+  }
+}
+
+async function closeRegisteredTab(source) {
+  const tabId = await getTabId(source);
+  if (!tabId) {
+    await unregisterTab(source);
+    return false;
+  }
+
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch {}
+
+  await unregisterTab(source);
+  console.log(LOG_PREFIX, `Closed registered tab: ${source} (${tabId})`);
+  return true;
+}
+
+async function clearSignupSiteData() {
+  const origins = [
+    'https://chatgpt.com',
+    'https://auth.openai.com',
+    'https://auth0.openai.com',
+    'https://accounts.openai.com',
+  ];
+
+  await chrome.browsingData.remove(
+    {
+      origins,
+      since: 0,
+      originTypes: {
+        unprotectedWeb: true,
+      },
+    },
+    {
+      cookies: true,
+      cache: true,
+      cacheStorage: true,
+      fileSystems: true,
+      indexedDB: true,
+      localStorage: true,
+      serviceWorkers: true,
+      webSQL: true,
+    }
+  );
 }
 
 // ============================================================
@@ -2005,8 +2067,11 @@ async function executeStep2(state) {
   if (!state.oauthUrl) {
     throw new Error('No OAuth URL. Complete step 1 first.');
   }
-  await addLog(`Step 2: Opening auth URL...`);
-  await reuseOrCreateTab('signup-page', state.oauthUrl);
+  await addLog('Step 2: Clearing ChatGPT/OpenAI site data for a fresh signup session...');
+  await clearSignupSiteData();
+  await closeRegisteredTab('signup-page');
+  await addLog('Step 2: Opening ChatGPT signup page...');
+  await reuseOrCreateTab('signup-page', 'https://chatgpt.com/');
 
   await sendToContentScript('signup-page', {
     type: 'EXECUTE_STEP',
@@ -2035,12 +2100,58 @@ async function executeStep3(state) {
     );
 
     try {
-      await sendToContentScript('signup-page', {
-        type: 'EXECUTE_STEP',
-        step: 3,
-        source: 'background',
-        payload: { email: state.email, password },
+      try {
+        await sendToContentScript('signup-page', {
+          type: 'EXECUTE_STEP',
+          step: 3,
+          source: 'background',
+          payload: { email: state.email, phase: 'email' },
+        });
+      } catch (err) {
+        if (!isBenignNavigationChannelClose(err)) {
+          throw err;
+        }
+
+        await addLog(
+          'Step 3: Email page navigated while continuing to password page. Waiting for password page...',
+          'warn'
+        );
+      }
+
+      await waitForSignupSurface({
+        step: '3-password',
+        timeout: 15000,
+        selectors: [
+          'input[type="password"]',
+          'input[name="password"]',
+          'input[id*="password" i]',
+          'input[autocomplete="new-password"]',
+          'input[autocomplete="current-password"]',
+          'input[autocomplete*="password" i]',
+          'input[aria-label*="密码"]',
+          'input[aria-label*="password" i]',
+          'input[placeholder*="密码"]',
+          'input[placeholder*="password" i]',
+        ],
       });
+
+      try {
+        await sendToContentScript('signup-page', {
+          type: 'EXECUTE_STEP',
+          step: 3,
+          source: 'background',
+          payload: { email: state.email, password, phase: 'password' },
+        });
+      } catch (err) {
+        if (!isBenignNavigationChannelClose(err)) {
+          throw err;
+        }
+
+        await addLog(
+          'Step 3: Password page navigated while continuing to the next step. Waiting for next signup surface...',
+          'warn'
+        );
+      }
 
       await waitForSignupSurface({
         step: 3,

@@ -1,5 +1,5 @@
-// content/signup-page.js — Content script for OpenAI auth pages (steps 2, 3, 4-receive, 5)
-// Injected on: auth0.openai.com, auth.openai.com, accounts.openai.com
+// content/signup-page.js — Content script for OpenAI signup/auth pages (steps 2, 3, 4-receive, 5)
+// Injected on: chatgpt.com, auth0.openai.com, auth.openai.com, accounts.openai.com
 
 console.log('[MultiPage:signup-page] Content script loaded on', location.href);
 
@@ -24,6 +24,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       if (message.type === 'RESEND_VERIFICATION_CODE') {
         log(`Step ${message.step}: ${err.message}`, 'error');
+        sendResponse({ error: err.message });
+        return;
+      }
+
+      if (message.type === 'WAIT_FOR_SURFACE' || message.type === 'CHECK_PAGE_RECOVERY_STATE') {
         sendResponse({ error: err.message });
         return;
       }
@@ -204,20 +209,29 @@ async function step2_clickRegister() {
 
   let registerBtn = null;
   try {
-    registerBtn = await waitForElementByText(
-      'a, button, [role="button"], [role="link"]',
-      /sign\s*up|register|create\s*account|注册/i,
-      10000
+    registerBtn = await waitForElement(
+      'button[data-testid="signup-button"], a[data-testid="signup-button"]',
+      8000
     );
   } catch {
-    // Some pages may have a direct link
     try {
-      registerBtn = await waitForElement('a[href*="signup"], a[href*="register"]', 5000);
-    } catch {
-      throw new Error(
-        'Could not find Register/Sign up button. ' +
-        'Check auth page DOM in DevTools. URL: ' + location.href
+      registerBtn = await waitForElementByText(
+        'a, button, [role="button"], [role="link"]',
+        /免费注册|sign\s*up|register|create\s*account/i,
+        8000
       );
+    } catch {
+      try {
+        registerBtn = await waitForElement(
+          'a[href*="signup"], a[href*="register"], a[href*="create-account"]',
+          5000
+        );
+      } catch {
+        throw new Error(
+          'Could not find Register/Sign up button. ' +
+          'Check signup page DOM in DevTools. URL: ' + location.href
+        );
+      }
     }
   }
 
@@ -226,8 +240,14 @@ async function step2_clickRegister() {
   simulateClick(registerBtn);
   log('Step 2: Clicked Register button');
   await waitForPostClickTransition(2, previousUrl, [
+    'input#email',
     'input[type="email"]',
     'input[name="email"]',
+    'input[autocomplete*="email" i]',
+    'input[aria-label*="电子邮件地址"]',
+    'input[aria-label*="email" i]',
+    'input[placeholder*="电子邮件地址"]',
+    'input[placeholder*="email" i]',
     'input[name="username"]',
     'input[type="password"]',
     'input[name="name"]',
@@ -241,17 +261,37 @@ async function step2_clickRegister() {
 // ============================================================
 
 async function step3_fillEmailPassword(payload) {
+  const phase = payload?.phase || 'email';
+
+  if (phase === 'password') {
+    return await step3_fillPassword(payload);
+  }
+
+  return await step3_submitEmail(payload);
+}
+
+async function step3_submitEmail(payload) {
   const { email } = payload;
   if (!email) throw new Error('No email provided. Paste email in Side Panel first.');
 
   await ensureAuthSurfaceReady(3);
   log(`Step 3: Filling email: ${email}`);
 
-  // Find email input
   let emailInput = null;
   try {
     emailInput = await waitForElement(
-      'input[type="email"], input[name="email"], input[name="username"], input[id*="email"], input[placeholder*="email"], input[placeholder*="Email"]',
+      [
+        'input#email',
+        'input[name="email"]',
+        'input[type="email"]',
+        'input[autocomplete*="email" i]',
+        'input[aria-label*="电子邮件地址"]',
+        'input[aria-label*="email" i]',
+        'input[placeholder*="电子邮件地址"]',
+        'input[placeholder*="email" i]',
+        'input[name="username"]',
+        'input[id*="email"]',
+      ].join(', '),
       10000
     );
   } catch {
@@ -262,47 +302,107 @@ async function step3_fillEmailPassword(payload) {
   fillInput(emailInput, email);
   log('Step 3: Email filled');
 
-  // Check if password field is on the same page
-  let passwordInput = document.querySelector('input[type="password"]');
-
-  if (!passwordInput) {
-    // Need to submit email first to get to password page
-    log('Step 3: No password field yet, submitting email first...');
-    const submitBtn = document.querySelector('button[type="submit"]')
-      || await waitForElementByText('button', /continue|next|submit|继续|下一步/i, 5000).catch(() => null);
-
-    if (submitBtn) {
-      await humanPause(400, 1100);
-      simulateClick(submitBtn);
-      log('Step 3: Submitted email, waiting for password field...');
-      await sleep(2000);
-    }
-
-    try {
-      passwordInput = await waitForElement('input[type="password"]', 10000);
-    } catch {
-      throw new Error('Could not find password input after submitting email. URL: ' + location.href);
-    }
+  const emailSubmitBtn = await findEmailContinueButton().catch(() => null);
+  if (!emailSubmitBtn) {
+    throw new Error('Could not find Continue button after filling email. URL: ' + location.href);
   }
 
-  if (!payload.password) throw new Error('No password provided. Step 3 requires a generated password.');
+  await humanPause(400, 1100);
+  simulateClick(emailSubmitBtn);
+  log('Step 3: Submitted email');
+  return { submittedEmail: true };
+}
+
+async function step3_fillPassword(payload) {
+  const { email, password } = payload;
+  if (!password) throw new Error('No password provided. Step 3 requires a generated password.');
+
+  await ensureAuthSurfaceReady(3);
+  log('Step 3: Filling password on password page...');
+
+  let passwordInput = null;
+  try {
+    passwordInput = await waitForElement(
+      [
+        'input[type="password"]',
+        'input[name="password"]',
+        'input[id*="password" i]',
+        'input[autocomplete="new-password"]',
+        'input[autocomplete="current-password"]',
+        'input[autocomplete*="password" i]',
+        'input[aria-label*="密码"]',
+        'input[aria-label*="password" i]',
+        'input[placeholder*="密码"]',
+        'input[placeholder*="password" i]',
+      ].join(', '),
+      10000
+    );
+  } catch {
+    throw new Error('Could not find password input on password page. URL: ' + location.href);
+  }
+
   await humanPause(600, 1500);
-  fillInput(passwordInput, payload.password);
+  fillInput(passwordInput, password);
   log('Step 3: Password filled');
 
-  // Report complete BEFORE submit, because submit causes page navigation
-  // which kills the content script connection
   reportComplete(3, { email });
 
-  // Submit the form (page will navigate away after this)
   await sleep(500);
-  const submitBtn = document.querySelector('button[type="submit"]')
-    || await waitForElementByText('button', /continue|sign\s*up|submit|注册|创建|create/i, 5000).catch(() => null);
+  const submitBtn = await findPasswordContinueButton().catch(() => null);
 
-  if (submitBtn) {
-    await humanPause(500, 1300);
-    simulateClick(submitBtn);
-    log('Step 3: Form submitted');
+  if (!submitBtn) {
+    throw new Error('Could not find Continue button after filling password. URL: ' + location.href);
+  }
+
+  await humanPause(500, 1300);
+  simulateClick(submitBtn);
+  log('Step 3: Password form submitted');
+  return { submittedPassword: true };
+}
+
+async function findEmailContinueButton() {
+  const selector = [
+    'button[type="submit"].btn-primary',
+    'button.btn.btn-primary[type="submit"]',
+    'button[type="submit"]',
+  ].join(', ');
+
+  const directMatch = Array.from(document.querySelectorAll(selector)).find(button => {
+    const text = (button.textContent || '').replace(/\s+/g, ' ').trim();
+    return /^(继续|continue)$/i.test(text) || /继续|continue/i.test(text);
+  });
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  try {
+    return await waitForElementByText('button[type="submit"], button.btn-primary, button', /继续|continue/i, 5000);
+  } catch {
+    return await waitForElementByText('button', /继续|continue|next|submit/i, 5000);
+  }
+}
+
+async function findPasswordContinueButton() {
+  const selector = [
+    'button[type="submit"].btn-primary',
+    'button.btn.btn-primary[type="submit"]',
+    'button[type="submit"]',
+  ].join(', ');
+
+  const directMatch = Array.from(document.querySelectorAll(selector)).find(button => {
+    const text = (button.textContent || '').replace(/\s+/g, ' ').trim();
+    return /^(继续|continue)$/i.test(text) || /继续|continue/i.test(text);
+  });
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  try {
+    return await waitForElementByText('button[type="submit"], button.btn-primary, button', /继续|continue/i, 5000);
+  } catch {
+    return await waitForElementByText('button', /继续|continue|next|sign\s*up|submit|注册|创建|create/i, 5000);
   }
 }
 
