@@ -2014,6 +2014,74 @@ async function completeStepFromBackground(step, payload = {}) {
   notifyStepComplete(step, payload);
 }
 
+async function waitForSignupTabPostStep5Settled(options = {}) {
+  const {
+    timeoutMs = 15000,
+    transitionGraceMs = 4000,
+    stableCompleteMs = 1200,
+  } = options;
+
+  const tabId = await getTabId('signup-page');
+  if (!tabId) return;
+
+  let baselineTab = null;
+  try {
+    baselineTab = await chrome.tabs.get(tabId);
+  } catch {
+    return;
+  }
+
+  const baselineUrl = baselineTab?.url || '';
+  const startedAt = Date.now();
+  let navigationObserved = false;
+  let loggedWait = false;
+  let stableSince = baselineTab?.status === 'complete' ? Date.now() : 0;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    throwIfStopped();
+
+    let currentTab = null;
+    try {
+      currentTab = await chrome.tabs.get(tabId);
+    } catch {
+      return;
+    }
+
+    const urlChanged = Boolean(baselineUrl) && currentTab.url !== baselineUrl;
+    const isLoading = currentTab.status === 'loading';
+
+    if (!navigationObserved && (urlChanged || isLoading)) {
+      navigationObserved = true;
+      stableSince = 0;
+      if (!loggedWait) {
+        loggedWait = true;
+        await addLog('Step 6: Detected ongoing post-step-5 navigation. Waiting for the signup tab to settle...', 'info');
+      }
+    }
+
+    if (currentTab.status === 'complete') {
+      if (!stableSince) {
+        stableSince = Date.now();
+      }
+
+      const stableFor = Date.now() - stableSince;
+      const graceExpired = Date.now() - startedAt >= transitionGraceMs;
+
+      if ((navigationObserved && stableFor >= stableCompleteMs) || (!navigationObserved && graceExpired)) {
+        return;
+      }
+    } else {
+      stableSince = 0;
+    }
+
+    await sleepWithStop(250);
+  }
+
+  if (loggedWait) {
+    await addLog('Step 6: Signup tab was still transitioning after step 5, continuing with the current page state.', 'warn');
+  }
+}
+
 async function getSignupPageRecoveryState() {
   const tabId = await getTabId('signup-page');
   if (!tabId) {
@@ -2969,6 +3037,7 @@ async function executeStep6(state) {
     throw new Error('No email. Complete step 3 first.');
   }
 
+  await waitForSignupTabPostStep5Settled();
   await addLog(`Step 6: Opening OAuth URL for login...`);
   // Reuse the signup-page tab — navigate it to the OAuth URL
   await reuseOrCreateTab('signup-page', state.oauthUrl);
