@@ -495,7 +495,7 @@ async function findVerificationResendButton(timeout = 10000) {
 // ============================================================
 
 async function step6_login(payload) {
-  const { email, password } = payload;
+  const { email, password, preferPasswordlessLogin } = payload;
   if (!email) throw new Error('No email provided for login.');
 
   await ensureAuthSurfaceReady(6);
@@ -526,7 +526,27 @@ async function step6_login(payload) {
     log('Step 6: Submitted email');
   }
 
-  const passwordInput = await waitForLoginPasswordField();
+  const nextLoginAction = await waitForLoginNextAction({
+    preferPasswordlessLogin: Boolean(preferPasswordlessLogin),
+  });
+
+  if (nextLoginAction?.type === 'passwordless') {
+    log('Step 6: Passwordless login option detected, sending one-time code...');
+    await waitForButtonEnabled(nextLoginAction.button);
+    reportComplete(6, { needsOTP: true });
+    await humanPause(450, 1200);
+    simulateClick(nextLoginAction.button);
+    log('Step 6: Requested one-time login code');
+    return;
+  }
+
+  if (nextLoginAction?.type === 'code') {
+    log('Step 6: Verification code page appeared directly after email submit.');
+    reportComplete(6, { needsOTP: true });
+    return;
+  }
+
+  const passwordInput = nextLoginAction?.type === 'password' ? nextLoginAction.input : null;
   if (passwordInput) {
     log('Step 6: Password field found, filling password...');
     await humanPause(550, 1450);
@@ -551,22 +571,47 @@ async function step6_login(payload) {
   reportComplete(6, { needsOTP: true });
 }
 
-async function waitForLoginPasswordField(timeout = 25000) {
+async function waitForLoginNextAction(options = {}) {
+  const {
+    preferPasswordlessLogin = false,
+    timeout = 25000,
+  } = options;
   const start = Date.now();
+  let passwordCandidate = null;
 
   while (Date.now() - start < timeout) {
     throwIfStopped();
 
+    const passwordlessButton = findVisiblePasswordlessLoginButton();
+    if (passwordlessButton) {
+      return { type: 'passwordless', button: passwordlessButton };
+    }
+
+    const codeInput = findVisibleVerificationCodeInput();
+    if (codeInput) {
+      return { type: 'code', input: codeInput };
+    }
+
     const passwordInput = findVisiblePasswordInput();
     if (passwordInput) {
-      return passwordInput;
+      if (!preferPasswordlessLogin) {
+        return { type: 'password', input: passwordInput };
+      }
+
+      if (!passwordCandidate) {
+        passwordCandidate = passwordInput;
+      }
     }
 
     await sleep(250);
   }
 
-  log(`Step 6: Password field did not appear within ${Math.round(timeout / 1000)}s.`, 'warn');
-  return null;
+  if (preferPasswordlessLogin && passwordCandidate) {
+    throw new Error('Passwordless login button did not appear on the login page. URL: ' + location.href);
+  }
+
+  log(`Step 6: Login action did not appear within ${Math.round(timeout / 1000)}s.`, 'warn');
+  return passwordCandidate ? { type: 'password', input: passwordCandidate } : null;
 }
 
 function findVisiblePasswordInput() {
@@ -576,6 +621,43 @@ function findVisiblePasswordInput() {
       return input;
     }
   }
+  return null;
+}
+
+function findVisiblePasswordlessLoginButton() {
+  const selector = [
+    'button[name="intent"][value="passwordless_login_send_otp"]',
+    'button[value="passwordless_login_send_otp"]',
+  ].join(', ');
+
+  const buttons = document.querySelectorAll(selector);
+  for (const button of buttons) {
+    if (isElementVisible(button)) {
+      return button;
+    }
+  }
+
+  return null;
+}
+
+function findVisibleVerificationCodeInput() {
+  const selector = [
+    'input[name="code"]',
+    'input[name="otp"]',
+    'input[type="text"][maxlength="6"]',
+    'input[maxlength="1"]',
+    'input[aria-label*="code" i]',
+    'input[placeholder*="code" i]',
+    'input[inputmode="numeric"]',
+  ].join(', ');
+
+  const inputs = document.querySelectorAll(selector);
+  for (const input of inputs) {
+    if (isElementVisible(input)) {
+      return input;
+    }
+  }
+
   return null;
 }
 

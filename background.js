@@ -41,6 +41,7 @@ const DEFAULT_STATE = {
   forceRefreshOAuthBeforeStep6: false,
   email: null,
   password: null,
+  signupHasPassword: null,
   accounts: [], // Successfully completed accounts: { email, password, createdAt }
   manualAliasUsage: {},
   preservedAliases: {},
@@ -1733,6 +1734,9 @@ async function handleStepData(step, payload) {
       break;
     case 3:
       if (payload.email) await setEmailState(payload.email);
+      if (payload.signupHasPassword !== undefined) {
+        await setState({ signupHasPassword: Boolean(payload.signupHasPassword) });
+      }
       break;
     case 4:
       if (payload.emailTimestamp) await setState({ lastEmailTimestamp: payload.emailTimestamp });
@@ -2348,7 +2352,6 @@ async function executeStep3(state) {
   }
 
   const password = state.customPassword || generatePassword();
-  await setPasswordState(password);
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     await addLog(
@@ -2382,11 +2385,13 @@ async function executeStep3(state) {
       });
 
       if (!isStep3PasswordSurface(nextSurface?.selector || '')) {
+        await setPasswordState('');
         await addLog('Step 3: Signup flowed directly to verification/profile stage without a password page.', 'info');
-        await completeStepFromBackground(3, { email: state.email });
+        await completeStepFromBackground(3, { email: state.email, signupHasPassword: false });
         return;
       }
 
+      await setPasswordState(password);
       try {
         await sendToContentScript('signup-page', {
           type: 'EXECUTE_STEP',
@@ -2409,7 +2414,7 @@ async function executeStep3(state) {
         step: 3,
         selectors: STEP3_POST_SIGNUP_SELECTORS,
       });
-      await completeStepFromBackground(3, { email: state.email });
+      await completeStepFromBackground(3, { email: state.email, signupHasPassword: true });
       return;
     } catch (err) {
       const recoveryState = await getSignupPageRecoveryState();
@@ -2973,7 +2978,11 @@ async function executeStep6(state) {
     type: 'EXECUTE_STEP',
     step: 6,
     source: 'background',
-    payload: { email: state.email, password: state.password },
+    payload: {
+      email: state.email,
+      password: state.password,
+      preferPasswordlessLogin: state.signupHasPassword === false,
+    },
   });
 
   await waitForSignupSurface({
