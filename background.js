@@ -3027,43 +3027,87 @@ async function refreshOAuthIfTimedOutBeforeStep7Resend() {
 // Step 6: Login ChatGPT (Background opens tab, chatgpt.js handles login)
 // ============================================================
 
+async function recoverStep6OperationTimedOut(state) {
+  if (!state.vpsUrl) {
+    await addLog(
+      'Step 6: OpenAI showed "Operation timed out". Retrying the current OAuth URL once...',
+      'warn'
+    );
+    return await getState();
+  }
+
+  await addLog(
+    'Step 6: OpenAI showed "Operation timed out". Refreshing OAuth link and retrying step 6...',
+    'warn'
+  );
+
+  await executeStep1(state);
+  const refreshedState = await getState();
+  if (!refreshedState.oauthUrl) {
+    throw new Error('Step 1 completed but no OAuth URL was saved after step 6 timeout recovery.');
+  }
+
+  await addLog('Step 6: New OAuth link obtained after OpenAI timeout. Retrying login...', 'ok');
+  return refreshedState;
+}
+
 async function executeStep6(state) {
-  state = await refreshOAuthIfTimedOutBeforeStep6(state);
+  let currentState = state;
 
-  if (!state.oauthUrl) {
-    throw new Error('No OAuth URL. Complete step 1 first.');
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    currentState = await refreshOAuthIfTimedOutBeforeStep6(currentState);
+
+    if (!currentState.oauthUrl) {
+      throw new Error('No OAuth URL. Complete step 1 first.');
+    }
+    if (!currentState.email) {
+      throw new Error('No email. Complete step 3 first.');
+    }
+
+    try {
+      await waitForSignupTabPostStep5Settled();
+      await addLog(
+        `Step 6: Opening OAuth URL for login...${attempt > 1 ? ` [retry ${attempt}/2]` : ''}`
+      );
+      // Reuse the signup-page tab — navigate it to the OAuth URL
+      await reuseOrCreateTab('signup-page', currentState.oauthUrl);
+
+      // signup-page.js will inject (same auth.openai.com domain) and handle login
+      await sendToContentScript('signup-page', {
+        type: 'EXECUTE_STEP',
+        step: 6,
+        source: 'background',
+        payload: {
+          email: currentState.email,
+          password: currentState.password,
+          preferPasswordlessLogin: currentState.signupHasPassword === false,
+        },
+      });
+
+      await waitForSignupSurface({
+        step: 6,
+        selectors: [
+          'input[name="code"]',
+          'input[name="otp"]',
+          'input[maxlength="1"]',
+          'button[type="submit"][data-dd-action-name="Continue"]',
+          'button[type="submit"]._primary_3rdp0_107',
+        ],
+      });
+      return;
+    } catch (err) {
+      const recoveryState = await getSignupPageRecoveryState();
+      const canRecover = attempt < 2
+        && recoveryState?.recoverable
+        && recoveryState.type === 'operation_timed_out';
+      if (!canRecover) {
+        throw err;
+      }
+
+      currentState = await recoverStep6OperationTimedOut(currentState);
+      await sleepWithStop(1200);
+    }
   }
-  if (!state.email) {
-    throw new Error('No email. Complete step 3 first.');
-  }
-
-  await waitForSignupTabPostStep5Settled();
-  await addLog(`Step 6: Opening OAuth URL for login...`);
-  // Reuse the signup-page tab — navigate it to the OAuth URL
-  await reuseOrCreateTab('signup-page', state.oauthUrl);
-
-  // signup-page.js will inject (same auth.openai.com domain) and handle login
-  await sendToContentScript('signup-page', {
-    type: 'EXECUTE_STEP',
-    step: 6,
-    source: 'background',
-    payload: {
-      email: state.email,
-      password: state.password,
-      preferPasswordlessLogin: state.signupHasPassword === false,
-    },
-  });
-
-  await waitForSignupSurface({
-    step: 6,
-    selectors: [
-      'input[name="code"]',
-      'input[name="otp"]',
-      'input[maxlength="1"]',
-      'button[type="submit"][data-dd-action-name="Continue"]',
-      'button[type="submit"]._primary_3rdp0_107',
-    ],
-  });
 }
 
 // ============================================================
