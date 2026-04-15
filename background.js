@@ -1970,6 +1970,46 @@ async function waitForSignupSurface(payload, timeout = 20000) {
   throw new Error(`Signup page surface wait failed: ${getErrorMessage(lastError)}`);
 }
 
+const STEP3_PASSWORD_SELECTORS = [
+  'input[type="password"]',
+  'input[name="password"]',
+  'input[id*="password" i]',
+  'input[autocomplete="new-password"]',
+  'input[autocomplete="current-password"]',
+  'input[autocomplete*="password" i]',
+  'input[aria-label*="密码"]',
+  'input[aria-label*="password" i]',
+  'input[placeholder*="密码"]',
+  'input[placeholder*="password" i]',
+];
+
+const STEP3_POST_SIGNUP_SELECTORS = [
+  'input[name="code"]',
+  'input[name="otp"]',
+  'input[type="text"][maxlength="6"]',
+  'input[maxlength="1"]',
+  'input[aria-label*="code" i]',
+  'input[placeholder*="code" i]',
+  'input[inputmode="numeric"]',
+  'input[name="name"]',
+  'input[placeholder*="全名"]',
+  'input[placeholder*="full name" i]',
+  '[role="spinbutton"][data-type="year"]',
+  'input[name="birthday"]',
+  'input[name="age"]',
+];
+
+function isStep3PasswordSurface(selector = '') {
+  return STEP3_PASSWORD_SELECTORS.includes(selector);
+}
+
+async function completeStepFromBackground(step, payload = {}) {
+  await setStepStatus(step, 'completed');
+  await addLog(`Step ${step} completed`, 'ok');
+  await handleStepData(step, payload);
+  notifyStepComplete(step, payload);
+}
+
 async function getSignupPageRecoveryState() {
   const tabId = await getTabId('signup-page');
   if (!tabId) {
@@ -2330,27 +2370,22 @@ async function executeStep3(state) {
         }
 
         await addLog(
-          'Step 3: Email page navigated while continuing to password page. Waiting for password page...',
+          'Step 3: Email page navigated. Waiting for the next signup surface...',
           'warn'
         );
       }
 
-      await waitForSignupSurface({
-        step: '3-password',
+      const nextSurface = await waitForSignupSurface({
+        step: '3-next',
         timeout: 15000,
-        selectors: [
-          'input[type="password"]',
-          'input[name="password"]',
-          'input[id*="password" i]',
-          'input[autocomplete="new-password"]',
-          'input[autocomplete="current-password"]',
-          'input[autocomplete*="password" i]',
-          'input[aria-label*="密码"]',
-          'input[aria-label*="password" i]',
-          'input[placeholder*="密码"]',
-          'input[placeholder*="password" i]',
-        ],
+        selectors: [...STEP3_PASSWORD_SELECTORS, ...STEP3_POST_SIGNUP_SELECTORS],
       });
+
+      if (!isStep3PasswordSurface(nextSurface?.selector || '')) {
+        await addLog('Step 3: Signup flowed directly to verification/profile stage without a password page.', 'info');
+        await completeStepFromBackground(3, { email: state.email });
+        return;
+      }
 
       try {
         await sendToContentScript('signup-page', {
@@ -2365,24 +2400,16 @@ async function executeStep3(state) {
         }
 
         await addLog(
-          'Step 3: Password page navigated while continuing to the next step. Waiting for next signup surface...',
+          'Step 3: Password page navigated while continuing to the next step. Waiting for verification/profile stage...',
           'warn'
         );
       }
 
       await waitForSignupSurface({
         step: 3,
-        selectors: [
-          'input[name="code"]',
-          'input[name="otp"]',
-          'input[maxlength="1"]',
-          'input[name="name"]',
-          'input[placeholder*="全名"]',
-          'input[placeholder*="full name" i]',
-          '[role="spinbutton"][data-type="year"]',
-          'input[name="age"]',
-        ],
+        selectors: STEP3_POST_SIGNUP_SELECTORS,
       });
+      await completeStepFromBackground(3, { email: state.email });
       return;
     } catch (err) {
       const recoveryState = await getSignupPageRecoveryState();

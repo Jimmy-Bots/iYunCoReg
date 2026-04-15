@@ -345,8 +345,6 @@ async function step3_fillPassword(payload) {
   fillInput(passwordInput, password);
   log('Step 3: Password filled');
 
-  reportComplete(3, { email });
-
   await sleep(500);
   const submitBtn = await findPasswordContinueButton().catch(() => null);
 
