@@ -4,7 +4,7 @@ const SCRIPT_SOURCE = (() => {
   if (window.__MULTIPAGE_SOURCE) return window.__MULTIPAGE_SOURCE;
   const url = location.href;
   if (url.includes('chatgpt.com') || url.includes('auth0.openai.com') || url.includes('auth.openai.com') || url.includes('accounts.openai.com')) return 'signup-page';
-  if (url.includes('mail.qq.com')) return 'qq-mail';
+  if (url.includes('mail.qq.com') || url.includes('exmail.qq.com')) return 'qq-mail';
   if (url.includes('mail.163.com')) return 'mail-163';
   if (url.includes('mail.google.com')) return 'gmail-mail';
   if (url.includes('duckduckgo.com/email/settings/autofill')) return 'duck-mail';

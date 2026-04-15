@@ -1,5 +1,5 @@
 // content/qq-mail.js — Content script for QQ Mail (steps 4, 7)
-// Injected on: mail.qq.com, wx.mail.qq.com
+// Injected on: mail.qq.com, wx.mail.qq.com, exmail.qq.com
 // NOTE: all_frames: true
 //
 // Strategy for avoiding stale codes:

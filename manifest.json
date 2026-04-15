@@ -51,7 +51,8 @@
     {
       "matches": [
         "https://mail.qq.com/*",
-        "https://wx.mail.qq.com/*"
+        "https://wx.mail.qq.com/*",
+        "https://exmail.qq.com/*"
       ],
       "js": ["content/utils.js", "content/qq-mail.js"],
       "all_frames": true,

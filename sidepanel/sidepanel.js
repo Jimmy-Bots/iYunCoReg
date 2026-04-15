@@ -56,6 +56,8 @@ const inputVpsUrl = document.getElementById('input-vps-url');
 const btnPasteVpsUrl = document.getElementById('btn-paste-vps-url');
 const selectIcloudHostPreference = document.getElementById('select-icloud-host-preference');
 const selectMailProvider = document.getElementById('select-mail-provider');
+const rowQqMailDomain = document.getElementById('row-qq-mail-domain');
+const selectQqMailDomain = document.getElementById('select-qq-mail-domain');
 const inputMailPollAttempts = document.getElementById('input-mail-poll-attempts');
 const inputMailPollInterval = document.getElementById('input-mail-poll-interval');
 const inputMailResendRounds = document.getElementById('input-mail-resend-rounds');
@@ -117,6 +119,7 @@ const I18N = {
     labelIcloudHost: 'iCloud',
     labelStep6: '第 6 步',
     labelVerify: '验证',
+    labelQqDomain: 'QQ 域名',
     labelMailWait: '轮询',
     labelMailResend: '重发',
     labelSpamokFresh: '新信',
@@ -139,7 +142,9 @@ const I18N = {
     cleanupAutoDelete: '成功使用后自动删除 iCloud 别名',
     step6ForceRefresh: '每次执行第 6 步前强制重新获取 OAuth',
     mailProvider163: '163 邮箱 (mail.163.com)',
-    mailProviderQq: 'QQ 邮箱 (wx.mail.qq.com)',
+    mailProviderQq: 'QQ 邮箱',
+    qqDomainStandard: '普通 (wx.mail.qq.com)',
+    qqDomainEnterprise: '企业 (exmail.qq.com)',
     mailProviderGmail: 'Gmail (mail.google.com)',
     mailProviderInbucket: 'Inbucket（自定义主机）',
     placeholderCpaAuth: '填写 Sub2API 或 CPA 链接',
@@ -290,6 +295,7 @@ const I18N = {
     labelIcloudHost: 'iCloud',
     labelStep6: 'Step 6',
     labelVerify: 'Verify',
+    labelQqDomain: 'QQ Domain',
     labelMailWait: 'Poll',
     labelMailResend: 'Resend',
     labelSpamokFresh: 'Fresh',
@@ -312,7 +318,9 @@ const I18N = {
     cleanupAutoDelete: 'Delete iCloud alias after successful use',
     step6ForceRefresh: 'Force refresh OAuth before every Step 6 run',
     mailProvider163: '163 Mail (mail.163.com)',
-    mailProviderQq: 'QQ Mail (wx.mail.qq.com)',
+    mailProviderQq: 'QQ Mail',
+    qqDomainStandard: 'Standard (wx.mail.qq.com)',
+    qqDomainEnterprise: 'Enterprise (exmail.qq.com)',
     mailProviderGmail: 'Gmail (mail.google.com)',
     mailProviderInbucket: 'Inbucket (custom host)',
     placeholderCpaAuth: 'Enter a Sub2API or CPA URL',
@@ -722,6 +730,7 @@ async function restoreState() {
     if (state.mailProvider) {
       selectMailProvider.value = state.mailProvider;
     }
+    selectQqMailDomain.value = state.qqMailDomain || 'standard';
     inputMailPollAttempts.value = String(state.mailPollMaxAttempts || 20);
     inputMailPollInterval.value = String(Math.max(1, Math.round((state.mailPollIntervalMs || 3000) / 1000)));
     inputMailResendRounds.value = String(state.mailResendRounds || 3);
@@ -784,7 +793,9 @@ function updateMailProviderUI() {
   const selectedSource = getSelectedEmailSource();
   const useSourceManagedMailbox = selectedSource === 'spamok' || selectedSource === 'inbucket';
   const useInbucket = selectMailProvider.value === 'inbucket';
+  const useQq = selectMailProvider.value === 'qq';
   rowMailProvider.style.display = useSourceManagedMailbox ? 'none' : '';
+  rowQqMailDomain.style.display = !useSourceManagedMailbox && useQq ? '' : 'none';
   rowSpamokNewMailConfig.style.display = selectedSource === 'spamok' ? '' : 'none';
   rowInbucketHost.style.display = (selectedSource === 'inbucket' || (!useSourceManagedMailbox && useInbucket)) ? '' : 'none';
   rowInbucketDomain.style.display = selectedSource === 'inbucket' ? '' : 'none';
@@ -1690,6 +1701,14 @@ selectMailProvider.addEventListener('change', async () => {
   await chrome.runtime.sendMessage({
     type: 'SAVE_SETTING', source: 'sidepanel',
     payload: { mailProvider: selectMailProvider.value },
+  });
+});
+
+selectQqMailDomain.addEventListener('change', async () => {
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { qqMailDomain: selectQqMailDomain.value || 'standard' },
   });
 });
 

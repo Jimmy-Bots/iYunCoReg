@@ -93,9 +93,16 @@
         <span class="data-label" data-i18n="labelVerify">Verify</span>
         <select id="select-mail-provider" class="data-select">
           <option value="163" data-i18n="mailProvider163">163 Mail (mail.163.com)</option>
-          <option value="qq" data-i18n="mailProviderQq">QQ Mail (wx.mail.qq.com)</option>
+          <option value="qq" data-i18n="mailProviderQq">QQ Mail</option>
           <option value="gmail" data-i18n="mailProviderGmail">Gmail (mail.google.com)</option>
           <option value="inbucket" data-i18n="mailProviderInbucket">Inbucket (custom host)</option>
+        </select>
+      </div>
+      <div class="data-row" id="row-qq-mail-domain" style="display:none;">
+        <span class="data-label" data-i18n="labelQqDomain">QQ 域名</span>
+        <select id="select-qq-mail-domain" class="data-select">
+          <option value="standard" data-i18n="qqDomainStandard">普通 (wx.mail.qq.com)</option>
+          <option value="enterprise" data-i18n="qqDomainEnterprise">企业 (exmail.qq.com)</option>
         </select>
       </div>
       <div class="data-row" id="row-mail-poll-config">
