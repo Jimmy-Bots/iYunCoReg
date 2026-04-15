@@ -205,6 +205,9 @@ function findVerificationErrorMessage(errorPatterns = []) {
 
 async function step2_clickRegister() {
   await ensureAuthSurfaceReady(2);
+  await waitForDocumentReady('complete', 20000);
+  await sleep(300);
+  log(`Step 2: Landing page fully loaded with readyState ${document.readyState}`);
   log('Step 2: Looking for Register/Sign up button...');
 
   let registerBtn = null;
