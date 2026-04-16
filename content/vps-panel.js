@@ -79,10 +79,119 @@ function findCodexOauthCard() {
   return null;
 }
 
+function normalizeText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function isVisible(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+    return false;
+  }
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function findCodexOauthStatusNode(card = findCodexOauthCard()) {
+  if (!card) return null;
+
+  const candidates = card.querySelectorAll([
+    '.status-badge',
+    '[class*="statusBadge"]',
+    '[class*="status-badge"]',
+    '[class*="status"][class*="badge"]',
+  ].join(', '));
+
+  for (const node of candidates) {
+    const text = normalizeText(node.textContent || '');
+    if (text && isVisible(node)) {
+      return node;
+    }
+  }
+
+  return null;
+}
+
+function getCodexOauthVerificationState() {
+  const card = findCodexOauthCard();
+  const statusNode = findCodexOauthStatusNode(card);
+  const statusText = normalizeText(statusNode?.textContent || '');
+  const callbackSection = card?.querySelector('[class*="callbackSection"]') || card;
+  const errorCandidates = callbackSection
+    ? callbackSection.querySelectorAll([
+      '[role="alert"]',
+      '.invalid-feedback',
+      '[class*="error"]',
+      '[class*="danger"]',
+      '[class*="failed"]',
+    ].join(', '))
+    : [];
+
+  let errorText = '';
+  for (const node of errorCandidates) {
+    const text = normalizeText(node.textContent || '');
+    if (!text || !isVisible(node)) continue;
+    if (/(?:认证失败|授权失败|提交失败|回调失败|无效|错误|失败|failed|invalid|error)/i.test(text)) {
+      errorText = text;
+      break;
+    }
+  }
+
+  const success = /(?:认证成功|授权成功|认证完成|authentication success|authorization success|authenticated|authorized)/i.test(statusText);
+  const waiting = /(?:等待认证中|waiting for auth|waiting for authentication|processing|处理中)/i.test(statusText);
+  const failure = /(?:认证失败|授权失败|提交失败|回调失败|authentication failed|authorization failed|invalid callback|callback invalid|callback failed|失败|failed)/i.test(statusText)
+    || Boolean(errorText);
+
+  return {
+    statusText,
+    errorText,
+    success,
+    waiting,
+    failure,
+    message: errorText || statusText || '',
+  };
+}
+
+async function waitForCodexOauthVerificationResult(baseline = {}, timeout = 30000) {
+  const baselineStatusText = normalizeText(baseline.statusText || '');
+  const baselineErrorText = normalizeText(baseline.errorText || '');
+  const start = Date.now();
+  let lastSnapshot = baseline;
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    const snapshot = getCodexOauthVerificationState();
+    lastSnapshot = snapshot;
+
+    const statusChanged = Boolean(snapshot.statusText) && snapshot.statusText !== baselineStatusText;
+    const errorChanged = Boolean(snapshot.errorText) && snapshot.errorText !== baselineErrorText;
+    const actionable = (!baselineStatusText && !baselineErrorText)
+      ? Boolean(snapshot.statusText || snapshot.errorText)
+      : (statusChanged || errorChanged);
+
+    if (snapshot.failure && actionable) {
+      throw new Error(`CPA Auth callback failed: ${snapshot.message || 'unknown error'}`);
+    }
+
+    if (snapshot.success && actionable) {
+      return snapshot;
+    }
+
+    await sleep(250);
+  }
+
+  const lastMessage = normalizeText(lastSnapshot?.message || '');
+  throw new Error(
+    `CPA Auth did not confirm authorization within ${Math.round(timeout / 1000)}s. `
+    + `Last status: ${lastMessage || 'none'}`
+  );
+}
+
 function checkOauthTimeoutStatus() {
   const card = findCodexOauthCard();
-  const statusEl = card?.querySelector('.status-badge');
-  const statusText = (statusEl?.textContent || '').replace(/\s+/g, ' ').trim();
+  const statusEl = findCodexOauthStatusNode(card);
+  const statusText = normalizeText(statusEl?.textContent || '');
   const loginButton = card?.querySelector('.card-header button.btn.btn-primary, .card-header button.btn');
   const loginButtonDisabled = Boolean(loginButton?.disabled);
   const waiting = /等待认证中|waiting for auth|waiting for authentication/i.test(statusText);
@@ -249,23 +358,12 @@ async function step9_vpsVerify(payload) {
   }
 
   await humanPause(450, 1200);
+  const baselineVerificationState = getCodexOauthVerificationState();
   simulateClick(submitBtn);
   log('Step 9: Clicked "提交回调 URL", waiting for authentication result...');
 
-  // Wait for "认证成功！" status badge to appear
-  try {
-    await waitForElementByText('.status-badge, [class*="status"]', /认证成功|授权成功|认证完成|success|authenticated|authorized/i, 30000);
-    log('Step 9: Authentication successful!', 'ok');
-  } catch {
-    // Check if there's an error message instead
-    const statusEl = document.querySelector('.status-badge, [class*="status"]');
-    const statusText = statusEl ? statusEl.textContent : 'unknown';
-    if (/成功|success/i.test(statusText)) {
-      log('Step 9: Authentication successful!', 'ok');
-    } else {
-      log(`Step 9: Status after submit: "${statusText}". May still be processing.`, 'warn');
-    }
-  }
+  const result = await waitForCodexOauthVerificationResult(baselineVerificationState, 30000);
+  log(`Step 9: Authentication successful! ${result.message || ''}`.trim(), 'ok');
 
   reportComplete(9);
 }

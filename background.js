@@ -3073,7 +3073,7 @@ async function executeStep9(state) {
   await new Promise(r => setTimeout(r, 1000));
 
   await addLog(`Step 9: Completing authorization in ${authPanel.label}...`);
-  await chrome.tabs.sendMessage(tabId, {
+  const response = await chrome.tabs.sendMessage(tabId, {
     type: 'EXECUTE_STEP',
     step: 9,
     source: 'background',
@@ -3083,6 +3083,10 @@ async function executeStep9(state) {
       authPanelProvider: authPanel.provider,
     },
   });
+
+  if (response?.error) {
+    throw new Error(response.error);
+  }
 }
 
 // ============================================================
