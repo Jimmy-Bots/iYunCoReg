@@ -808,7 +808,9 @@ async function fetchIcloudHideMyEmail() {
 
 async function fetchConfiguredEmail(options = {}) {
   const state = await getState();
-  const emailSource = getEmailSource(state);
+  const emailSource = getEmailSource({
+    emailSource: options?.emailSource ?? state?.emailSource,
+  });
   if (emailSource === 'duck') return fetchDuckEmail(options);
   if (emailSource === 'spamok') return fetchSpamokEmail(options);
   if (emailSource === 'inbucket') return fetchInbucketEmail(options);

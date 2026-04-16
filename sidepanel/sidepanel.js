@@ -1039,7 +1039,10 @@ async function fetchConfiguredEmail() {
     const response = await chrome.runtime.sendMessage({
       type: 'FETCH_AUTO_EMAIL',
       source: 'sidepanel',
-      payload: { generateNew: true },
+      payload: {
+        generateNew: true,
+        emailSource: getSelectedEmailSource(),
+      },
     });
 
     if (response?.error) {
