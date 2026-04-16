@@ -212,31 +212,131 @@ function collectOpenedMailTextCandidates(meta = {}) {
   return candidates.sort((a, b) => (b.score - a.score) || (b.text.length - a.text.length));
 }
 
+function getCandidateSignature(candidate) {
+  return `${candidate?.source || 'unknown'}:${normalizeText(candidate?.text || '').slice(0, 240)}`;
+}
+
+function getMailMetaTokens(meta = {}) {
+  return normalizeText(`${meta.sender || ''} ${meta.subject || ''}`)
+    .toLowerCase()
+    .split(/[^a-z0-9\u4e00-\u9fff]+/i)
+    .filter(token => token.length >= 2);
+}
+
+function candidateMatchesMailMeta(candidate, meta = {}) {
+  const normalized = normalizeText(candidate?.text || '');
+  if (!normalized) return false;
+
+  const lower = normalized.toLowerCase();
+  const sender = normalizeText(meta.sender || '').toLowerCase();
+  if (sender && lower.includes(sender)) {
+    return true;
+  }
+
+  const tokens = getMailMetaTokens(meta);
+  let matchedTokens = 0;
+  for (const token of tokens.slice(0, 10)) {
+    if (lower.includes(token)) {
+      matchedTokens += 1;
+      if (matchedTokens >= 2) {
+        return true;
+      }
+    }
+  }
+
+  return candidate.score >= 18;
+}
+
+function dedupeCandidates(candidates = []) {
+  const seen = new Set();
+  const deduped = [];
+  for (const candidate of candidates) {
+    const signature = getCandidateSignature(candidate);
+    if (!signature || seen.has(signature)) continue;
+    seen.add(signature);
+    deduped.push(candidate);
+  }
+  return deduped;
+}
+
+async function clickMailItemForReading(item) {
+  const clickTargets = [
+    item.querySelector('span.da0'),
+    item.querySelector('.nui-user'),
+    item,
+  ].filter(Boolean);
+
+  for (const target of clickTargets) {
+    try {
+      target.scrollIntoView({ block: 'center', inline: 'nearest' });
+    } catch {}
+
+    target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    target.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+    target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+
+    try {
+      if (typeof target.click === 'function') {
+        target.click();
+      } else {
+        simulateClick(target);
+      }
+    } catch {
+      simulateClick(target);
+    }
+
+    await sleep(180);
+  }
+}
+
 async function extractCodeFromOpenedMail(item, step, meta = {}) {
-  const clickTarget = item.querySelector('span.da0') || item;
-  simulateClick(clickTarget);
-  await sleep(500);
+  const baselineCandidates = collectOpenedMailTextCandidates(meta);
+  const baselineSignatures = new Set(baselineCandidates.map(getCandidateSignature));
+  let changedAfterOpen = false;
+
+  await clickMailItemForReading(item);
+  await sleep(700);
 
   let bestCandidate = null;
-  for (let attempt = 1; attempt <= 16; attempt++) {
+  for (let attempt = 1; attempt <= 24; attempt++) {
     throwIfStopped();
     const candidates = collectOpenedMailTextCandidates(meta);
-    if (!bestCandidate && candidates.length > 0) {
-      bestCandidate = candidates[0];
+    const changedCandidates = candidates.filter(candidate => !baselineSignatures.has(getCandidateSignature(candidate)));
+    if (changedCandidates.length > 0) {
+      changedAfterOpen = true;
     }
-    for (const candidate of candidates) {
+
+    const relatedCandidates = candidates.filter(candidate => candidateMatchesMailMeta(candidate, meta));
+    const prioritizedCandidates = dedupeCandidates([
+      ...changedCandidates.filter(candidate => candidateMatchesMailMeta(candidate, meta)),
+      ...relatedCandidates,
+      ...(attempt >= 12 ? changedCandidates : []),
+      ...(attempt >= 18 ? candidates : []),
+    ]);
+
+    if (!bestCandidate) {
+      bestCandidate = prioritizedCandidates[0] || changedCandidates[0] || candidates[0] || null;
+    }
+
+    for (const candidate of prioritizedCandidates) {
       const code = extractVerificationCode(candidate.text);
       if (code) {
         log(`Step ${step}: Code found from opened 163 mail body (${candidate.source})`, 'ok');
         return code;
       }
     }
+
+    if (attempt === 4 || attempt === 8 || attempt === 14) {
+      await clickMailItemForReading(item);
+    }
+
     await sleep(300);
   }
 
   if (bestCandidate?.text) {
     log(
-      `Step ${step}: Opened 163 mail body was detected but no code was parsed. Sample (${bestCandidate.source}): ${bestCandidate.text.slice(0, 180)}`,
+      `Step ${step}: Opened 163 mail body ${changedAfterOpen ? 'changed' : 'did not clearly change'} but no code was parsed. Sample (${bestCandidate.source}): ${bestCandidate.text.slice(0, 220)}`,
       'warn'
     );
   }
