@@ -290,6 +290,35 @@ const STEP3_EMAIL_SELECTORS = [
   'input[id*="email"]',
 ];
 
+const STEP3_PASSWORD_SELECTORS = [
+  'input[type="password"]',
+  'input[name="password"]',
+  'input[id*="password" i]',
+  'input[autocomplete="new-password"]',
+  'input[autocomplete="current-password"]',
+  'input[autocomplete*="password" i]',
+  'input[aria-label*="密码"]',
+  'input[aria-label*="password" i]',
+  'input[placeholder*="密码"]',
+  'input[placeholder*="password" i]',
+];
+
+const STEP3_POST_SIGNUP_SELECTORS = [
+  'input[name="code"]',
+  'input[name="otp"]',
+  'input[type="text"][maxlength="6"]',
+  'input[maxlength="1"]',
+  'input[aria-label*="code" i]',
+  'input[placeholder*="code" i]',
+  'input[inputmode="numeric"]',
+  'input[name="name"]',
+  'input[placeholder*="全名"]',
+  'input[placeholder*="full name" i]',
+  '[role="spinbutton"][data-type="year"]',
+  'input[name="birthday"]',
+  'input[name="age"]',
+];
+
 async function step3_recoverOperationTimeout() {
   await ensureAuthSurfaceReady(3, 10000);
   log('Step 3: Operation timed out detected. Looking for Retry button...');
