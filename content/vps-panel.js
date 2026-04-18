@@ -138,7 +138,7 @@ function getCodexOauthVerificationState() {
     }
   }
 
-  const success = /(?:认证成功|授权成功|认证完成|authentication success|authorization success|authenticated|authorized)/i.test(statusText);
+  const success = /(?:认证成功|授权成功|认证完成|authentication success(?:ful)?|authorization success|authenticated|authorized)/i.test(statusText);
   const waiting = /(?:等待认证中|waiting for auth|waiting for authentication|processing|处理中)/i.test(statusText);
   const failure = !success && (
     /(?:认证失败|授权失败|提交失败|回调失败|authentication failed|authorization failed|invalid callback|callback invalid|callback failed|失败|failed)/i.test(statusText)
