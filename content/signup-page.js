@@ -266,11 +266,60 @@ async function step2_clickRegister() {
 async function step3_fillEmailPassword(payload) {
   const phase = payload?.phase || 'email';
 
+  if (phase === 'recover_timeout') {
+    return await step3_recoverOperationTimeout();
+  }
+
   if (phase === 'password') {
     return await step3_fillPassword(payload);
   }
 
   return await step3_submitEmail(payload);
+}
+
+const STEP3_EMAIL_SELECTORS = [
+  'input#email',
+  'input[name="email"]',
+  'input[type="email"]',
+  'input[autocomplete*="email" i]',
+  'input[aria-label*="电子邮件地址"]',
+  'input[aria-label*="email" i]',
+  'input[placeholder*="电子邮件地址"]',
+  'input[placeholder*="email" i]',
+  'input[name="username"]',
+  'input[id*="email"]',
+];
+
+async function step3_recoverOperationTimeout() {
+  await ensureAuthSurfaceReady(3, 10000);
+  log('Step 3: Operation timed out detected. Looking for Retry button...');
+
+  const retryBtn = await waitForElementByText(
+    'button, [role="button"], a[role="button"]',
+    /重试|retry|try again|再试一次/i,
+    8000
+  ).catch(() => null);
+
+  if (!retryBtn) {
+    throw new Error('Could not find Retry button on the Operation timed out page.');
+  }
+
+  await humanPause(450, 1200);
+  simulateClick(retryBtn);
+  log('Step 3: Clicked Retry on the Operation timed out page');
+
+  const recoverySurface = await waitForAnySelector([
+    ...STEP3_EMAIL_SELECTORS,
+    ...STEP3_PASSWORD_SELECTORS,
+    ...STEP3_POST_SIGNUP_SELECTORS,
+  ], 15000);
+
+  if (!recoverySurface) {
+    throw new Error('Retry was clicked, but signup inputs did not reappear in time.');
+  }
+
+  log(`Step 3: Recovery surface detected after Retry: ${recoverySurface.selector}`);
+  return { recovered: true, selector: recoverySurface.selector };
 }
 
 async function step3_submitEmail(payload) {
@@ -283,18 +332,7 @@ async function step3_submitEmail(payload) {
   let emailInput = null;
   try {
     emailInput = await waitForElement(
-      [
-        'input#email',
-        'input[name="email"]',
-        'input[type="email"]',
-        'input[autocomplete*="email" i]',
-        'input[aria-label*="电子邮件地址"]',
-        'input[aria-label*="email" i]',
-        'input[placeholder*="电子邮件地址"]',
-        'input[placeholder*="email" i]',
-        'input[name="username"]',
-        'input[id*="email"]',
-      ].join(', '),
+      STEP3_EMAIL_SELECTORS.join(', '),
       10000
     );
   } catch {

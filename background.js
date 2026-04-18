@@ -2554,9 +2554,25 @@ async function executeStep3(state) {
       }
 
       await addLog(
-        'Step 3: OpenAI showed "Operation timed out" after submit. Re-running step 2 and retrying step 3...',
+        'Step 3: OpenAI showed "Operation timed out" after submit. Clicking Retry first, then re-entering email/password...',
         'warn'
       );
+
+      try {
+        await sendToContentScript('signup-page', {
+          type: 'EXECUTE_STEP',
+          step: 3,
+          source: 'background',
+          payload: { phase: 'recover_timeout' },
+        });
+        await sleepWithStop(800);
+        continue;
+      } catch (recoverErr) {
+        await addLog(
+          `Step 3: Retry recovery was unavailable (${getErrorMessage(recoverErr)}). Re-running step 2 and retrying step 3...`,
+          'warn'
+        );
+      }
 
       const latestState = await getState();
       await executeStep2(latestState);
