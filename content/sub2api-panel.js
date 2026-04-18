@@ -92,6 +92,26 @@ function findAddAccountButton() {
   return findVisibleButtonByText(/添加账号|add account|create account/i);
 }
 
+function findBackButton() {
+  return findVisibleButtonByText(/返回|back/i);
+}
+
+function findCompleteAuthorizationButton() {
+  return findVisibleButtonByText(/完成授权|complete authorization|complete auth/i);
+}
+
+function isPendingAuthorizationStep() {
+  const completeButton = findCompleteAuthorizationButton();
+  return Boolean(completeButton && completeButton.disabled);
+}
+
+function findAccountNameInput() {
+  const inputs = Array.from(document.querySelectorAll(
+    'input[data-tour="account-form-name"], input[placeholder*="账号名称"], input[placeholder*="account name" i]'
+  ));
+  return inputs.find(isVisible) || null;
+}
+
 function findOpenAiButton() {
   const scopedButtons = Array.from(document.querySelectorAll('[data-tour="account-form-platform"] button'));
   const scopedMatch = scopedButtons.find(button => /openai/i.test(getButtonText(button)));
@@ -179,7 +199,8 @@ async function checkOauthTimeoutStatus() {
 }
 
 async function ensureAccountModalReady(targetEmail) {
-  const nameInput = await waitForElement('input[data-tour="account-form-name"], input[placeholder*="账号名称"], input[placeholder*="account name" i]', 10000);
+  const nameInput = findAccountNameInput()
+    || await waitForElement('input[data-tour="account-form-name"], input[placeholder*="账号名称"], input[placeholder*="account name" i]', 10000);
   await humanPause(350, 900);
   fillInput(nameInput, targetEmail);
   log(`Step 1: Filled Sub2API account name: ${targetEmail}`);
@@ -215,8 +236,44 @@ async function ensureAccountModalReady(targetEmail) {
   );
 }
 
+async function returnFromPendingAuthorizationStep() {
+  if (!isPendingAuthorizationStep()) {
+    return;
+  }
+
+  const backButton = findBackButton();
+  if (!backButton) {
+    throw new Error('Sub2API is stuck on the authorization step, but the "返回" button was not found.');
+  }
+
+  await humanPause(250, 700);
+  simulateClick(backButton);
+  log('Step 1: Clicked "返回" to leave the pending authorization step in Sub2API');
+  await sleep(500);
+  await waitForCondition(
+    () => Boolean(findAccountNameInput() || findAddAccountButton() || findGenerateAuthButton() || findRegenerateButton() || getAuthUrlValue()),
+    10000,
+    'Sub2API to return from the pending authorization step'
+  );
+}
+
+async function openNewAccountFlow(targetEmail) {
+  let nameInput = findAccountNameInput();
+  if (!nameInput) {
+    const addAccountButton = findAddAccountButton() || await waitForElementByText('button', /添加账号|add account|create account/i, 15000);
+    await humanPause(250, 700);
+    simulateClick(addAccountButton);
+    log('Step 1: Clicked "添加账号" in Sub2API');
+    await sleep(500);
+  }
+
+  await ensureAccountModalReady(targetEmail);
+  return await waitForElementByText('button', /生成授权链接|generate authorization link|generate auth/i, 15000);
+}
+
 async function step1_getOAuthLink(payload = {}) {
   const targetEmail = String(payload.email || '').trim();
+  const forceNewAccount = Boolean(payload.forceNewAccount);
   if (!targetEmail) {
     throw new Error('Sub2API step 1 requires a generated email/account name.');
   }
@@ -225,9 +282,15 @@ async function step1_getOAuthLink(payload = {}) {
   await sleep(200);
   log('Step 1: Waiting for Sub2API admin accounts page to become ready...');
 
+  await returnFromPendingAuthorizationStep();
+
+  if (forceNewAccount) {
+    log(`Step 1: Fresh run detected for ${targetEmail}. Skipping "重新生成" and creating a new Sub2API account entry instead.`);
+  }
+
   const existingOauthUrl = getAuthUrlValue();
   const regenerateButton = findRegenerateButton();
-  if (existingOauthUrl && regenerateButton) {
+  if (!forceNewAccount && existingOauthUrl && regenerateButton) {
     await humanPause(250, 700);
     simulateClick(regenerateButton);
     log('Step 1: Clicked "重新生成" on Sub2API');
@@ -239,14 +302,8 @@ async function step1_getOAuthLink(payload = {}) {
   }
 
   let generateButton = findGenerateAuthButton();
-  if (!generateButton) {
-    const addAccountButton = findAddAccountButton() || await waitForElementByText('button', /添加账号|add account|create account/i, 15000);
-    await humanPause(250, 700);
-    simulateClick(addAccountButton);
-    log('Step 1: Clicked "添加账号" in Sub2API');
-    await sleep(500);
-    await ensureAccountModalReady(targetEmail);
-    generateButton = await waitForElementByText('button', /生成授权链接|generate authorization link|generate auth/i, 15000);
+  if (forceNewAccount || !generateButton) {
+    generateButton = await openNewAccountFlow(targetEmail);
   }
 
   const previousOauthUrl = getAuthUrlValue();

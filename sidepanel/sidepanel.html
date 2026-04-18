@@ -89,6 +89,13 @@
           <span data-i18n="step6ForceRefresh">每次执行第 6 步前强制重新获取 OAuth</span>
         </label>
       </div>
+      <div class="data-row">
+        <span class="data-label" data-i18n="labelAutoRunConfig">Auto Run</span>
+        <label class="option-toggle" for="checkbox-auto-retry-failed-runs">
+          <input type="checkbox" id="checkbox-auto-retry-failed-runs" />
+          <span data-i18n="autoRetryFailedRuns">Auto Run 报错后自动从头重试当前轮，直到满足运行次数</span>
+        </label>
+      </div>
       <div class="data-row" id="row-mail-provider">
         <span class="data-label" data-i18n="labelVerify">Verify</span>
         <select id="select-mail-provider" class="data-select">

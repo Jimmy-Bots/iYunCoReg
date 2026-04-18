@@ -39,6 +39,7 @@ const DEFAULT_STATE = {
   autoDeleteUsedIcloudAlias: false,
   emailSource: 'icloud',
   forceRefreshOAuthBeforeStep6: false,
+  autoRetryFailedRuns: false,
   email: null,
   password: null,
   signupHasPassword: null,
@@ -964,6 +965,7 @@ async function resetState() {
       'vpsUrl',
       'autoDeleteUsedIcloudAlias',
       'forceRefreshOAuthBeforeStep6',
+      'autoRetryFailedRuns',
       'customPassword',
       'emailSource',
       'icloudHostPreference',
@@ -998,6 +1000,7 @@ async function resetState() {
     vpsUrl: prev.vpsUrl || '',
     autoDeleteUsedIcloudAlias: Boolean(prev.autoDeleteUsedIcloudAlias),
     forceRefreshOAuthBeforeStep6: Boolean(prev.forceRefreshOAuthBeforeStep6),
+    autoRetryFailedRuns: Boolean(prev.autoRetryFailedRuns),
     customPassword: prev.customPassword || '',
     emailSource: getEmailSource(prev),
     icloudHostPreference: prev.icloudHostPreference || 'auto',
@@ -1642,6 +1645,7 @@ async function handleMessage(message, sender) {
       if (message.payload.vpsUrl !== undefined) updates.vpsUrl = message.payload.vpsUrl;
       if (message.payload.autoDeleteUsedIcloudAlias !== undefined) updates.autoDeleteUsedIcloudAlias = Boolean(message.payload.autoDeleteUsedIcloudAlias);
       if (message.payload.forceRefreshOAuthBeforeStep6 !== undefined) updates.forceRefreshOAuthBeforeStep6 = Boolean(message.payload.forceRefreshOAuthBeforeStep6);
+      if (message.payload.autoRetryFailedRuns !== undefined) updates.autoRetryFailedRuns = Boolean(message.payload.autoRetryFailedRuns);
       if (message.payload.customPassword !== undefined) updates.customPassword = message.payload.customPassword;
       if (message.payload.emailSource !== undefined) updates.emailSource = getEmailSource(message.payload);
       if (message.payload.icloudHostPreference !== undefined) updates.icloudHostPreference = message.payload.icloudHostPreference;
@@ -1943,6 +1947,48 @@ function getAutoStepDelay(step) {
   return delayMap[step] || 0;
 }
 
+function isAddPhoneBlockingError(error) {
+  const message = getErrorMessage(error).toLowerCase();
+  return /电话号码是必填项|phone number is required|required phone number|add phone|verify phone|phone required/.test(message);
+}
+
+async function executeAutoRunStepWithRetry(step, run, totalRuns) {
+  const latestState = await getState();
+  const allowAutoRetry = Boolean(latestState.autoRetryFailedRuns);
+  const attempts = allowAutoRetry ? 2 : 1;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await executeStepAndWait(step, getAutoStepDelay(step));
+      return;
+    } catch (err) {
+      lastError = err;
+      if (isStopError(err)) throw err;
+
+      if (isAddPhoneBlockingError(err)) {
+        await addLog(
+          `Run ${run}/${totalRuns}: Step ${step} hit an add-phone blocking error. Auto retry is disabled for this case.`,
+          'warn'
+        );
+        throw err;
+      }
+
+      if (attempt >= attempts) {
+        break;
+      }
+
+      await addLog(
+        `Run ${run}/${totalRuns}: Step ${step} failed (${getErrorMessage(err)}). Retrying the current step once before restarting the whole run...`,
+        'warn'
+      );
+      await sleepWithStop(1200);
+    }
+  }
+
+  throw lastError || new Error(`Step ${step} failed.`);
+}
+
 async function waitForSignupSurface(payload, timeout = 20000) {
   const startedAt = Date.now();
   let lastError = null;
@@ -2185,7 +2231,7 @@ async function executeAutoRunSteps(run, totalRuns, options = {}) {
       const currentState = await getState();
       const stepStatus = currentState.stepStatuses?.[step];
       if (stepStatus === 'completed' || stepStatus === 'skipped') continue;
-      await executeStepAndWait(step, getAutoStepDelay(step));
+      await executeAutoRunStepWithRetry(step, run, totalRuns);
     }
     startStep = 3;
   }
@@ -2218,7 +2264,7 @@ async function executeAutoRunSteps(run, totalRuns, options = {}) {
     if (step === 3 && !currentState.email) {
       await ensureAutoRunEmailReady(run, totalRuns);
     }
-    await executeStepAndWait(step, getAutoStepDelay(step));
+    await executeAutoRunStepWithRetry(step, run, totalRuns);
   }
 }
 
@@ -2275,6 +2321,19 @@ async function autoRunLoop(totalRuns, options = {}) {
         await addLog(`Run ${run}/${totalRuns} stopped by user`, 'warn');
         chrome.runtime.sendMessage(getAutoRunStatusMessage('stopped', run, totalRuns)).catch(() => {});
       } else {
+        const latestState = await getState();
+        if (latestState.autoRetryFailedRuns && !isAddPhoneBlockingError(err)) {
+          await addLog(
+            `Run ${run}/${totalRuns} failed: ${err.message}. Auto retry is enabled, restarting this run from step 1...`,
+            'warn'
+          );
+          chrome.runtime.sendMessage(getAutoRunStatusMessage('running', run, totalRuns)).catch(() => {});
+          clearStopRequest();
+          run -= 1;
+          await sleepWithStop(1200);
+          continue;
+        }
+
         autoRunPausedPhase = 'error';
         autoRunActive = false;
         await syncAutoRunState({ autoRunning: false });
@@ -2386,6 +2445,7 @@ async function executeStep1(state) {
     payload: {
       email: state.email,
       authPanelProvider: authPanel.provider,
+      forceNewAccount: authPanel.provider === 'sub2api' && autoRunActive && !String(state.oauthUrl || '').trim(),
     },
   });
 }

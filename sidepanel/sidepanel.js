@@ -25,6 +25,7 @@ const btnIcloudRefresh = document.getElementById('btn-icloud-refresh');
 const btnIcloudDeleteUsed = document.getElementById('btn-icloud-delete-used');
 const checkboxAutoDeleteIcloud = document.getElementById('checkbox-auto-delete-icloud');
 const checkboxForceRefreshOAuthBeforeStep6 = document.getElementById('checkbox-force-refresh-oauth-before-step6');
+const checkboxAutoRetryFailedRuns = document.getElementById('checkbox-auto-retry-failed-runs');
 const rowIcloudCleanup = document.getElementById('row-icloud-cleanup');
 const rowIcloudHost = document.getElementById('row-icloud-host');
 const inputIcloudSearch = document.getElementById('input-icloud-search');
@@ -118,6 +119,7 @@ const I18N = {
     labelCleanup: '清理',
     labelIcloudHost: 'iCloud',
     labelStep6: '第 6 步',
+    labelAutoRunConfig: '自动',
     labelVerify: '验证',
     labelQqDomain: 'QQ 域名',
     labelMailWait: '轮询',
@@ -141,6 +143,7 @@ const I18N = {
     icloudHostCn: 'iCloud.com.cn',
     cleanupAutoDelete: '成功使用后自动删除 iCloud 别名',
     step6ForceRefresh: '每次执行第 6 步前强制重新获取 OAuth',
+    autoRetryFailedRuns: 'Auto Run 报错后自动从头重试当前轮，直到满足运行次数',
     mailProvider163: '163 邮箱 (mail.163.com)',
     mailProviderQq: 'QQ 邮箱',
     qqDomainStandard: '普通 (wx.mail.qq.com)',
@@ -294,6 +297,7 @@ const I18N = {
     labelCleanup: 'Cleanup',
     labelIcloudHost: 'iCloud',
     labelStep6: 'Step 6',
+    labelAutoRunConfig: 'Auto',
     labelVerify: 'Verify',
     labelQqDomain: 'QQ Domain',
     labelMailWait: 'Poll',
@@ -317,6 +321,7 @@ const I18N = {
     icloudHostCn: 'iCloud.com.cn',
     cleanupAutoDelete: 'Delete iCloud alias after successful use',
     step6ForceRefresh: 'Force refresh OAuth before every Step 6 run',
+    autoRetryFailedRuns: 'When Auto Run fails, restart the current run from step 1 until the target run count is met',
     mailProvider163: '163 Mail (mail.163.com)',
     mailProviderQq: 'QQ Mail',
     qqDomainStandard: 'Standard (wx.mail.qq.com)',
@@ -644,6 +649,7 @@ async function syncCurrentFormSettings() {
     source: 'sidepanel',
     payload: {
       emailSource: getSelectedEmailSource(),
+      autoRetryFailedRuns: checkboxAutoRetryFailedRuns.checked,
       mailProvider: selectMailProvider.value,
       icloudHostPreference: selectIcloudHostPreference.value || 'auto',
       spamokWaitNewAttempts,
@@ -720,6 +726,7 @@ async function restoreState() {
     }
     checkboxAutoDeleteIcloud.checked = Boolean(state.autoDeleteUsedIcloudAlias);
     checkboxForceRefreshOAuthBeforeStep6.checked = Boolean(state.forceRefreshOAuthBeforeStep6);
+    checkboxAutoRetryFailedRuns.checked = Boolean(state.autoRetryFailedRuns);
     if (state.language) {
       selectLanguage.value = state.language;
     }
@@ -1688,6 +1695,14 @@ checkboxForceRefreshOAuthBeforeStep6.addEventListener('change', async () => {
     type: 'SAVE_SETTING',
     source: 'sidepanel',
     payload: { forceRefreshOAuthBeforeStep6: checkboxForceRefreshOAuthBeforeStep6.checked },
+  });
+});
+
+checkboxAutoRetryFailedRuns.addEventListener('change', async () => {
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { autoRetryFailedRuns: checkboxAutoRetryFailedRuns.checked },
   });
 });
 
