@@ -29,7 +29,7 @@
 - 自动填写邮箱、密码、姓名、生日 / 年龄
 - 自动轮询验证码并回填
 - 自动处理 OAuth 授权确认页
-- 支持 `QQ Mail`、`163 Mail`、`Gmail`、`Inbucket`
+- 支持 `QQ Mail`、`163 Mail`、`Gmail`、 `iCloud`、`Inbucket`
 - 支持中英文界面切换，默认中文
 - 支持失败后 `Skip`
 - 支持中断后继续

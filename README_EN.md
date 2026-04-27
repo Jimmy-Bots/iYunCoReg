@@ -29,7 +29,7 @@ then this extension should work out of the box for you.
 - Automatically fill email, password, name, birthday, or age
 - Automatically poll verification emails and fill the code back in
 - Automatically handle the OAuth consent page
-- Support `QQ Mail`, `163 Mail`, `Gmail`, and `Inbucket`
+- Support `QQ Mail`, `163 Mail`, `Gmail`, `iCloud`, and `Inbucket`
 - Support both Chinese and English UI, with Chinese as the default
 - Support `Skip` after a failure
 - Support resuming after interruption

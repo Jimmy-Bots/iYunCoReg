@@ -54,7 +54,7 @@ const DEFAULT_STATE = {
   customPassword: '',
   icloudHostPreference: 'auto',
   preferredIcloudHost: '',
-  mailProvider: '163', // 'qq', '163', 'gmail', or 'inbucket'
+  mailProvider: '163', // 'qq', '163', 'gmail', 'icloud', or 'inbucket'
   qqMailDomain: 'standard', // 'standard' or 'enterprise'
   mailPollMaxAttempts: 20,
   mailPollIntervalMs: 3000,
@@ -988,6 +988,13 @@ const pendingCommands = new Map(); // source -> { message, resolve, reject, time
 
 function queueCommand(source, message, timeout = 15000) {
   return new Promise((resolve, reject) => {
+    const existing = pendingCommands.get(source);
+    if (existing) {
+      clearTimeout(existing.timer);
+      existing.reject(new Error(`Superseded queued command for ${source}.`));
+      pendingCommands.delete(source);
+    }
+
     const timer = setTimeout(() => {
       pendingCommands.delete(source);
       const err = `Content script on ${source} did not respond in ${timeout / 1000}s. Try refreshing the tab and retry.`;
@@ -997,6 +1004,16 @@ function queueCommand(source, message, timeout = 15000) {
     pendingCommands.set(source, { message, resolve, reject, timer });
     console.log(LOG_PREFIX, `Command queued for ${source} (waiting for ready)`);
   });
+}
+
+function cancelPendingCommand(source, reason = STOP_ERROR_MESSAGE) {
+  const pending = pendingCommands.get(source);
+  if (!pending) return false;
+  clearTimeout(pending.timer);
+  pending.reject(new Error(reason));
+  pendingCommands.delete(source);
+  console.log(LOG_PREFIX, `Cancelled queued command for ${source}`);
+  return true;
 }
 
 function flushCommand(source, tabId) {
@@ -1153,6 +1170,11 @@ async function reuseOrCreateTab(source, url, options = {}) {
   }
 
   return tab.id;
+}
+
+async function resetRegisteredTab(source, reason = 'Resetting registered tab.') {
+  cancelPendingCommand(source, reason);
+  await closeRegisteredTab(source);
 }
 
 // ============================================================
@@ -2303,13 +2325,26 @@ async function executeStep3(state) {
 // Step 4: Get Signup Verification Code (qq-mail.js polls, then fills in signup-page.js)
 // ============================================================
 
-function getMailConfig(state) {
+async function getMailConfig(state) {
   const provider = state.mailProvider || 'qq';
   if (provider === '163') {
     return { source: 'mail-163', url: 'https://mail.163.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '163 Mail' };
   }
   if (provider === 'gmail') {
     return { source: 'gmail-mail', url: 'https://mail.google.com/mail/u/0/#inbox', label: 'Gmail' };
+  }
+  if (provider === 'icloud') {
+    const loginUrl = await getPreferredIcloudLoginUrl(null, state);
+    const mailUrl = new URL('/mail/', loginUrl).toString();
+    return {
+      source: 'icloud-mail',
+      url: mailUrl,
+      label: 'iCloud Mail',
+      forceFreshOpen: true,
+      navigateOnReuse: true,
+      inject: ['content/utils.js', 'content/icloud-mail.js'],
+      injectSource: 'icloud-mail',
+    };
   }
   if (provider === 'inbucket') {
     const host = normalizeInbucketOrigin(state.inbucketHost);
@@ -2405,9 +2440,11 @@ function isMailLoginRequiredError(error) {
     || message.includes('content script on qq-mail did not respond')
     || message.includes('content script on mail-163 did not respond')
     || message.includes('content script on gmail-mail did not respond')
+    || message.includes('content script on icloud-mail did not respond')
     || message.includes('make sure qq mail inbox is open')
     || message.includes('make sure inbox is open')
-    || message.includes('make sure gmail inbox or primary tab is open');
+    || message.includes('make sure gmail inbox or primary tab is open')
+    || message.includes('make sure icloud mail inbox is open');
 }
 
 async function promptMailLogin(mail, step, error) {
@@ -2576,9 +2613,17 @@ async function executeStep4(state) {
     intervalMs: mailPollConfig.intervalMs,
   };
 
-  const mail = getMailConfig(state);
+  const mail = await getMailConfig(state);
   if (mail.error) throw new Error(mail.error);
   await addLog(`Step 4: Opening ${mail.label}...`);
+
+  if (mail.forceFreshOpen) {
+    const existingTabId = await getTabId(mail.source);
+    if (existingTabId) {
+      await addLog(`Step 4: Resetting previous ${mail.label} tab before reopening...`, 'info');
+      await resetRegisteredTab(mail.source, `Resetting ${mail.label} tab before reopening.`);
+    }
+  }
 
   const alive = await isTabAlive(mail.source);
   if (alive) {
@@ -2835,9 +2880,17 @@ async function executeStep7(state) {
     intervalMs: mailPollConfig.intervalMs,
   };
 
-  const mail = getMailConfig(state);
+  const mail = await getMailConfig(state);
   if (mail.error) throw new Error(mail.error);
   await addLog(`Step 7: Opening ${mail.label}...`);
+
+  if (mail.forceFreshOpen) {
+    const existingTabId = await getTabId(mail.source);
+    if (existingTabId) {
+      await addLog(`Step 7: Resetting previous ${mail.label} tab before reopening...`, 'info');
+      await resetRegisteredTab(mail.source, `Resetting ${mail.label} tab before reopening.`);
+    }
+  }
 
   const alive = await isTabAlive(mail.source);
   if (alive) {
