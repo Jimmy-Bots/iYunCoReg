@@ -9,6 +9,7 @@
 
 const ICLOUD_MAIL_PREFIX = '[MultiPage:icloud-mail]';
 const ICLOUD_MAIL_GUARD_KEY = '__MULTIPAGE_ICLOUD_MAIL_INITIALIZED';
+const ICLOUD_LAST_BASELINE_SIGNATURES_KEY = '__MULTIPAGE_ICLOUD_LAST_BASELINE_SIGNATURES';
 
 if (window[ICLOUD_MAIL_GUARD_KEY]) {
   console.log(ICLOUD_MAIL_PREFIX, 'Already initialized on', location.href);
@@ -68,7 +69,6 @@ const ICLOUD_DELETE_BUTTON_PATTERN = /(?:删除邮件|删除|trash message|trash
 const ICLOUD_DELETE_MENU_PATTERN = /(?:^删除$|删除邮件|移到废纸篓|trash message|trash email|move to trash|delete message|delete email|^trash$|^delete$)/i;
 const ICLOUD_INBOX_PATTERN = /(?:收件箱|inbox)/i;
 const ICLOUD_NO_SELECTION_PATTERN = /(?:未选择邮件|no message selected)/i;
-
 let deepRootCacheAt = 0;
 let deepRootCache = [];
 
@@ -364,6 +364,71 @@ function extractVerificationCode(text) {
   if (match6) return match6[1];
 
   return null;
+}
+
+function parseIcloudRelativeTimestamp(timestampText) {
+  const text = normalizeText(timestampText);
+  if (!text) return null;
+
+  const now = new Date();
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+  if (/^(?:昨天|yesterday)$/i.test(text)) {
+    return base.getTime() - (12 * 60 * 60 * 1000);
+  }
+
+  let match = text.match(/^(上午|下午)\s*(\d{1,2}):(\d{2})$/);
+  if (match) {
+    const meridiem = match[1];
+    let hour = Number(match[2]);
+    const minute = Number(match[3]);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+    if (meridiem === '上午') {
+      if (hour === 12) hour = 0;
+    } else if (meridiem === '下午') {
+      if (hour < 12) hour += 12;
+    }
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0).getTime();
+  }
+
+  match = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match) {
+    let hour = Number(match[1]);
+    const minute = Number(match[2]);
+    const meridiem = match[3].toUpperCase();
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+    if (meridiem === 'AM') {
+      if (hour === 12) hour = 0;
+    } else if (meridiem === 'PM') {
+      if (hour < 12) hour += 12;
+    }
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0).getTime();
+  }
+
+  match = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (match) {
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (Number.isNaN(hour) || Number.isNaN(minute) || hour > 23 || minute > 59) return null;
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0).getTime();
+  }
+
+  return null;
+}
+
+function isCandidateFresh(candidate, filterAfterTimestamp) {
+  if (!filterAfterTimestamp || !Number.isFinite(filterAfterTimestamp) || filterAfterTimestamp <= 0) {
+    return true;
+  }
+
+  const parsedTimestamp = parseIcloudRelativeTimestamp(candidate?.meta?.timestamp || '');
+  if (parsedTimestamp == null) {
+    return false;
+  }
+
+  const boundary = new Date(filterAfterTimestamp);
+  boundary.setSeconds(0, 0);
+  return parsedTimestamp >= boundary.getTime();
 }
 
 function rowMatchesFilters(meta, senderFilters, subjectFilters) {
@@ -700,7 +765,7 @@ async function waitForMailRows(timeout = 15000) {
 }
 
 function findRefreshButton() {
-  const pattern = /^(?:刷新|refresh)$/i;
+  const pattern = /(?:刷新|refresh)/i;
   for (const candidate of getActionCandidates()) {
     if (!isPotentiallyVisibleAction(candidate)) continue;
     if (isElementDisabled(candidate)) continue;
@@ -1001,7 +1066,15 @@ function collectLooseThreadCandidates() {
 }
 
 async function handlePollEmail(step, payload) {
-  const { senderFilters, subjectFilters, maxAttempts, intervalMs } = payload;
+  const {
+    senderFilters,
+    subjectFilters,
+    maxAttempts,
+    intervalMs,
+    filterAfterTimestamp = 0,
+    allowVisibleFreshMatch = false,
+    existingVisibleFallbackAfterAttempt = 0,
+  } = payload;
 
   log(`Step ${step}: Starting email poll on iCloud Mail (max ${maxAttempts} attempts, every ${intervalMs / 1000}s)`);
 
@@ -1020,19 +1093,30 @@ async function handlePollEmail(step, payload) {
     rows = await waitForMailRows(8000);
   }
 
-  const looseCandidates = collectLooseThreadCandidates();
-  if (rows.length === 0 && looseCandidates.length === 0) {
+  const baselineCandidates = collectLooseThreadCandidates();
+  if (rows.length === 0 && baselineCandidates.length === 0) {
     throw new Error(`iCloud Mail list did not load. URL: ${location.href} | Title: ${document.title || 'unknown'}`);
   }
 
+  const previousBaselineSignatures = new Set(window[ICLOUD_LAST_BASELINE_SIGNATURES_KEY] || []);
   const existingSignatures = new Set(
-    looseCandidates.length > 0
-      ? looseCandidates.map(candidate => candidate.signature)
+    baselineCandidates.length > 0
+      ? baselineCandidates.map(candidate => candidate.signature)
       : Array.from(getCurrentMailSignatures())
   );
-  log(`Step ${step}: Snapshotted ${existingSignatures.size} visible iCloud Mail threads as "old"`);
-
-  const FALLBACK_AFTER = 0;
+  const refreshAvailable = Boolean(findRefreshButton());
+  const freshExistingSignatures = new Set(
+    baselineCandidates
+      .filter(candidate => isCandidateFresh(candidate, filterAfterTimestamp))
+      .filter(candidate => !previousBaselineSignatures.has(candidate.signature))
+      .map(candidate => candidate.signature)
+  );
+  window[ICLOUD_LAST_BASELINE_SIGNATURES_KEY] = Array.from(existingSignatures);
+  log(
+    `Step ${step}: Snapshotted ${existingSignatures.size} visible iCloud Mail threads as baseline; ` +
+    `${freshExistingSignatures.size} look fresh for this polling window. ` +
+    `(allowVisibleFreshMatch=${allowVisibleFreshMatch ? 'yes' : 'no'}, existingVisibleFallbackAfterAttempt=${existingVisibleFallbackAfterAttempt}, refreshAvailable=${refreshAvailable ? 'yes' : 'no'})`
+  );
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log(`Polling iCloud Mail... attempt ${attempt}/${maxAttempts}`);
@@ -1045,16 +1129,22 @@ async function handlePollEmail(step, payload) {
       }
     }
 
-    const useFallback = attempt > FALLBACK_AFTER;
     const orderedCandidates = [
       ...collectLooseThreadCandidates().filter(candidate => candidate.meta.unread),
       ...collectLooseThreadCandidates().filter(candidate => !candidate.meta.unread),
     ];
+    const canConsumeVisibleFreshMatch = allowVisibleFreshMatch || (!refreshAvailable && attempt > 1);
+    const canConsumeExistingVisibleMatch =
+      Number.isFinite(Number(existingVisibleFallbackAfterAttempt))
+      && Number(existingVisibleFallbackAfterAttempt) > 0
+      && attempt > Number(existingVisibleFallbackAfterAttempt);
 
     for (const candidate of orderedCandidates) {
       const { root: row, meta, signature } = candidate;
       if (!signature) continue;
-      if (!useFallback && existingSignatures.has(signature)) continue;
+      const isExisting = existingSignatures.has(signature);
+      const isFreshExisting = freshExistingSignatures.has(signature);
+      if (isExisting && !(canConsumeExistingVisibleMatch || (canConsumeVisibleFreshMatch && isFreshExisting))) continue;
       if (!rowMatchesFilters(meta, senderFilters, subjectFilters)) continue;
 
       const code = extractVerificationCode(meta.combinedText);
@@ -1063,14 +1153,12 @@ async function handlePollEmail(step, payload) {
         continue;
       }
 
-      const source = existingSignatures.has(signature) ? 'current-visible-match' : 'new';
+      const source = isExisting
+        ? (isFreshExisting ? 'current-visible-fresh-match' : 'existing-fallback-match')
+        : 'new';
       await deleteMailRow(row, meta, step);
       log(`Step ${step}: Code found: ${code} (${source}, subject: ${meta.subject.slice(0, 60)})`, 'ok');
       return { ok: true, code, emailTimestamp: Date.now(), mailId: signature };
-    }
-
-    if (FALLBACK_AFTER > 0 && attempt === FALLBACK_AFTER + 1) {
-      log(`Step ${step}: No new iCloud Mail threads after ${FALLBACK_AFTER} attempts, falling back to first matching email`, 'warn');
     }
 
     if (attempt < maxAttempts) {

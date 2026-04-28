@@ -60,6 +60,8 @@ const selectQqMailDomain = document.getElementById('select-qq-mail-domain');
 const inputMailPollAttempts = document.getElementById('input-mail-poll-attempts');
 const inputMailPollInterval = document.getElementById('input-mail-poll-interval');
 const inputMailResendRounds = document.getElementById('input-mail-resend-rounds');
+const rowMailExistingFallbackConfig = document.getElementById('row-mail-existing-fallback-config');
+const inputMailExistingFallbackRounds = document.getElementById('input-mail-existing-fallback-rounds');
 const rowInbucketHost = document.getElementById('row-inbucket-host');
 const inputInbucketHost = document.getElementById('input-inbucket-host');
 const rowInbucketMailbox = document.getElementById('row-inbucket-mailbox');
@@ -116,6 +118,7 @@ const I18N = {
     labelQqDomain: 'QQ 域名',
     labelMailWait: '轮询',
     labelMailResend: '重发',
+    labelMailFallback: '旧信',
     labelInbucket: 'Inbucket',
     labelMailbox: '邮箱名',
     labelEmail: '邮箱',
@@ -143,6 +146,7 @@ const I18N = {
     placeholderMailPollAttempts: '次数，例如 20',
     placeholderMailPollInterval: '间隔秒，例如 3',
     placeholderMailResendRounds: '重发轮数，例如 3',
+    placeholderMailExistingFallbackRounds: '几次后允许用旧邮件，例如 2，0=禁用',
     placeholderIcloudSearch: '搜索邮箱 / 标签 / 备注',
     placeholderEmail: '使用 Auto 生成 iCloud 别名，或手动粘贴',
     placeholderPassword: '留空则自动生成',
@@ -278,6 +282,7 @@ const I18N = {
     labelQqDomain: 'QQ Domain',
     labelMailWait: 'Poll',
     labelMailResend: 'Resend',
+    labelMailFallback: 'Fallback',
     labelInbucket: 'Inbucket',
     labelMailbox: 'Mailbox',
     labelEmail: 'Email',
@@ -305,6 +310,7 @@ const I18N = {
     placeholderMailPollAttempts: 'Attempts, e.g. 20',
     placeholderMailPollInterval: 'Interval sec, e.g. 3',
     placeholderMailResendRounds: 'Resend rounds, e.g. 3',
+    placeholderMailExistingFallbackRounds: 'Use existing mail after N attempts, e.g. 2, 0=off',
     placeholderIcloudSearch: 'Search alias / label / note',
     placeholderEmail: 'Use Auto to generate an iCloud alias, or paste manually',
     placeholderPassword: 'Leave blank to auto-generate',
@@ -647,6 +653,11 @@ async function restoreState() {
     inputMailPollAttempts.value = String(state.mailPollMaxAttempts || 20);
     inputMailPollInterval.value = String(Math.max(1, Math.round((state.mailPollIntervalMs || 3000) / 1000)));
     inputMailResendRounds.value = String(state.mailResendRounds || 3);
+    inputMailExistingFallbackRounds.value = String(
+      Number.isFinite(Number(state.mailExistingFallbackRounds))
+        ? Math.max(0, Number(state.mailExistingFallbackRounds))
+        : 2
+    );
     if (state.inbucketHost) {
       inputInbucketHost.value = state.inbucketHost;
     }
@@ -696,8 +707,10 @@ function syncPasswordField(state) {
 function updateMailProviderUI() {
   const useInbucket = selectMailProvider.value === 'inbucket';
   const useQq = selectMailProvider.value === 'qq';
+  const useIcloud = selectMailProvider.value === 'icloud';
   rowMailProvider.style.display = '';
   rowQqMailDomain.style.display = useQq ? '' : 'none';
+  rowMailExistingFallbackConfig.style.display = useIcloud ? '' : 'none';
   rowInbucketHost.style.display = useInbucket ? '' : 'none';
   rowInbucketMailbox.style.display = useInbucket ? '' : 'none';
 }
@@ -1664,6 +1677,17 @@ inputMailResendRounds.addEventListener('change', async () => {
     type: 'SAVE_SETTING',
     source: 'sidepanel',
     payload: { mailResendRounds: value },
+  });
+});
+
+inputMailExistingFallbackRounds.addEventListener('change', async () => {
+  const parsed = parseInt(inputMailExistingFallbackRounds.value, 10);
+  const value = Math.min(10, Math.max(0, Number.isFinite(parsed) ? parsed : 2));
+  inputMailExistingFallbackRounds.value = String(value);
+  await chrome.runtime.sendMessage({
+    type: 'SAVE_SETTING',
+    source: 'sidepanel',
+    payload: { mailExistingFallbackRounds: value },
   });
 });
 

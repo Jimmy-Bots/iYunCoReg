@@ -59,6 +59,7 @@ const DEFAULT_STATE = {
   mailPollMaxAttempts: 20,
   mailPollIntervalMs: 3000,
   mailResendRounds: 3,
+  mailExistingFallbackRounds: 2,
   inbucketHost: '',
   inbucketMailbox: '',
   lastSignupVerificationCode: '',
@@ -829,6 +830,7 @@ async function resetState() {
       'mailPollMaxAttempts',
       'mailPollIntervalMs',
       'mailResendRounds',
+      'mailExistingFallbackRounds',
       'inbucketHost',
       'inbucketMailbox',
     ]),
@@ -860,6 +862,9 @@ async function resetState() {
     mailPollMaxAttempts: Number(prev.mailPollMaxAttempts) || 20,
     mailPollIntervalMs: Number(prev.mailPollIntervalMs) || 3000,
     mailResendRounds: Number(prev.mailResendRounds) || 3,
+    mailExistingFallbackRounds: Number.isFinite(Number(prev.mailExistingFallbackRounds))
+      ? Math.max(0, Number(prev.mailExistingFallbackRounds))
+      : 2,
     inbucketHost: prev.inbucketHost || '',
     inbucketMailbox: prev.inbucketMailbox || '',
   });
@@ -1495,6 +1500,12 @@ async function handleMessage(message, sender) {
       if (message.payload.mailPollMaxAttempts !== undefined) updates.mailPollMaxAttempts = Number(message.payload.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts;
       if (message.payload.mailPollIntervalMs !== undefined) updates.mailPollIntervalMs = Number(message.payload.mailPollIntervalMs) || DEFAULT_STATE.mailPollIntervalMs;
       if (message.payload.mailResendRounds !== undefined) updates.mailResendRounds = Number(message.payload.mailResendRounds) || DEFAULT_STATE.mailResendRounds;
+      if (message.payload.mailExistingFallbackRounds !== undefined) {
+        const parsedRounds = Number(message.payload.mailExistingFallbackRounds);
+        updates.mailExistingFallbackRounds = Number.isFinite(parsedRounds)
+          ? Math.min(10, Math.max(0, parsedRounds))
+          : DEFAULT_STATE.mailExistingFallbackRounds;
+      }
       if (message.payload.inbucketHost !== undefined) updates.inbucketHost = message.payload.inbucketHost;
       if (message.payload.inbucketMailbox !== undefined) updates.inbucketMailbox = message.payload.inbucketMailbox;
       await setState(updates);
@@ -2427,7 +2438,11 @@ function getMailPollConfig(state) {
   const maxAttempts = Math.min(120, Math.max(1, Number(state?.mailPollMaxAttempts) || DEFAULT_STATE.mailPollMaxAttempts));
   const intervalMs = Math.min(30000, Math.max(1000, Number(state?.mailPollIntervalMs) || DEFAULT_STATE.mailPollIntervalMs));
   const resendRounds = Math.min(10, Math.max(1, Number(state?.mailResendRounds) || DEFAULT_STATE.mailResendRounds));
-  return { maxAttempts, intervalMs, resendRounds };
+  const parsedExistingFallbackAttempts = Number(state?.mailExistingFallbackRounds);
+  const existingFallbackAttempts = Number.isFinite(parsedExistingFallbackAttempts)
+    ? Math.min(120, Math.max(0, parsedExistingFallbackAttempts))
+    : DEFAULT_STATE.mailExistingFallbackRounds;
+  return { maxAttempts, intervalMs, resendRounds, existingFallbackAttempts };
 }
 
 function supportsMailLoginPrompt(mail) {
@@ -2471,6 +2486,7 @@ async function pollVerificationCodeWithAutoResend(options) {
     successSelectors,
     successMessage,
     resendRounds = 3,
+    existingFallbackAttempts = 2,
     beforeResend = null,
   } = options;
 
@@ -2481,6 +2497,8 @@ async function pollVerificationCodeWithAutoResend(options) {
     const currentPayload = {
       ...pollPayload,
       filterAfterTimestamp: currentFilterAfter,
+      allowVisibleFreshMatch: round > 1,
+      existingVisibleFallbackAfterAttempt: existingFallbackAttempts,
     };
 
     const result = await sendToContentScript(mail.source, {
@@ -2658,6 +2676,7 @@ async function executeStep4(state) {
         'input[name="age"]',
       ],
       resendRounds: mailPollConfig.resendRounds,
+      existingFallbackAttempts: mailPollConfig.existingFallbackAttempts,
     });
   } catch (err) {
     if (isMailLoginRequiredError(err)) {
@@ -2918,6 +2937,7 @@ async function executeStep7(state) {
       successMessage: 'Got login verification code',
       successSelectors: STEP7_SUCCESS_SELECTORS,
       resendRounds: mailPollConfig.resendRounds,
+      existingFallbackAttempts: mailPollConfig.existingFallbackAttempts,
       beforeResend: async () => {
         await refreshOAuthIfTimedOutBeforeStep7Resend();
       },
